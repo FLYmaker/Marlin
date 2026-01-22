@@ -23,15 +23,13 @@
 
 /**
  * AZTEEG_X3 Arduino Mega with RAMPS v1.4 pin assignments
- * Schematic: http://files.panucatt.com/datasheets/azteegx3_designfiles.zip
- * ATmega2560
  */
 
 #define REQUIRE_MEGA2560
 #include "env_validate.h"
 
 #if HOTENDS > 2 || E_STEPPERS > 2
-  #error "Azteeg X3 supports up to 2 hotends / E steppers."
+  #error "Azteeg X3 supports up to 2 hotends / E-steppers. Comment out this line to continue."
 #endif
 
 #if ENABLED(CASE_LIGHT_ENABLE) && !PIN_EXISTS(CASE_LIGHT)
@@ -45,7 +43,7 @@
 #define SERVO0_PIN                            44  // SERVO1 port
 #define SERVO1_PIN                            55  // SERVO2 port
 
-#include "pins_RAMPS_13.h" // ... RAMPS
+#include "pins_RAMPS_13.h"
 
 //
 // LCD / Controller

@@ -43,7 +43,7 @@ typedef struct {
 class FWRetract {
 private:
   #if HAS_MULTI_EXTRUDER
-    static Flags<EXTRUDERS> retracted_swap;        // Which extruders are swap-retracted
+    static bool retracted_swap[EXTRUDERS];         // Which extruders are swap-retracted
   #endif
 
 public:
@@ -55,7 +55,7 @@ public:
     static constexpr bool autoretract_enabled = false;
   #endif
 
-  static Flags<EXTRUDERS> retracted;               // Which extruders are currently retracted
+  static bool retracted[EXTRUDERS];                // Which extruders are currently retracted
   static float current_retract[EXTRUDERS],         // Retract value used by planner
                current_hop;                        // Hop value used by planner
 
@@ -63,7 +63,9 @@ public:
 
   static void reset();
 
-  static void refresh_autoretract() { retracted.reset(); }
+  static void refresh_autoretract() {
+    LOOP_L_N(i, EXTRUDERS) retracted[i] = false;
+  }
 
   static void enable_autoretract(const bool enable) {
     #if ENABLED(FWRETRACT_AUTORETRACT)
@@ -72,15 +74,19 @@ public:
     #endif
   }
 
-  static void retract(const bool retracting E_OPTARG(bool swapping=false));
+  static void retract(const bool retracting
+    #if HAS_MULTI_EXTRUDER
+      , bool swapping = false
+    #endif
+  );
 
-  static void M207_report();
   static void M207();
-  static void M208_report();
+  static void M207_report(const bool forReplay=false);
   static void M208();
+  static void M208_report(const bool forReplay=false);
   #if ENABLED(FWRETRACT_AUTORETRACT)
-    static void M209_report();
     static void M209();
+    static void M209_report(const bool forReplay=false);
   #endif
 };
 

@@ -24,13 +24,17 @@
 #include "../inc/MarlinConfig.h"
 
 #if CASE_LIGHT_IS_COLOR_LED
-  #include "leds/leds.h" // for LED1Color_t
+  #include "leds/leds.h" // for LEDColor
+#endif
+
+#if DISABLED(CASE_LIGHT_NO_BRIGHTNESS) || ENABLED(CASE_LIGHT_USE_NEOPIXEL)
+  #define CASELIGHT_USES_BRIGHTNESS 1
 #endif
 
 class CaseLight {
 public:
   static bool on;
-  #if CASELIGHT_USES_BRIGHTNESS
+  #if ENABLED(CASELIGHT_USES_BRIGHTNESS)
     static uint8_t brightness;
   #endif
 
@@ -45,12 +49,12 @@ public:
   }
 
   static void update(const bool sflag);
-  static void update_brightness() { update(false); }
-  static void update_enabled()    { update(true);  }
+  static inline void update_brightness() { update(false); }
+  static inline void update_enabled()    { update(true);  }
 
   #if ENABLED(CASE_LIGHT_IS_COLOR_LED)
     private:
-      static LED1Color_t color;
+      static LEDColor color;
   #endif
 };
 

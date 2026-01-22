@@ -20,10 +20,6 @@
  *
  */
 
-#include "../../inc/MarlinConfig.h"
-
-#if HAS_STATUS_MESSAGE
-
 #include "../gcode.h"
 #include "../../lcd/marlinui.h"
 
@@ -32,11 +28,9 @@
  */
 void GcodeSuite::M117() {
 
-  if (parser.has_string())
-    ui.set_status_no_expire(parser.string_arg);
+  if (parser.string_arg && parser.string_arg[0])
+    ui.set_status(parser.string_arg);
   else
     ui.reset_status();
 
 }
-
-#endif // HAS_STATUS_MESSAGE

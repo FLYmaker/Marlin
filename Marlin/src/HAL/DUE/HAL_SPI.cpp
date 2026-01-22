@@ -31,6 +31,8 @@
 
 /**
  * HAL for Arduino Due and compatible (SAM3X8E)
+ *
+ * For ARDUINO_ARCH_SAM
  */
 
 #ifdef ARDUINO_ARCH_SAM
@@ -42,7 +44,7 @@
 // Public functions
 // ------------------------
 
-#if ANY(SOFTWARE_SPI, FORCE_SOFT_SPI)
+#if EITHER(DUE_SOFTWARE_SPI, FORCE_SOFT_SPI)
 
   // ------------------------
   // Software SPI
@@ -208,8 +210,8 @@
       A("str %[sck_mask],[%[sck_port],#0x4]")      /* CODR */
       A("bfi %[bin],%[work],#0,#1")                /* Store read bit as the bit 0 */
 
-      : [bin]"+r"( bin ),
-        [work]"+r"( work )
+      : [bin]"+r"(bin),
+        [work]"+r"(work)
       : [bitband_miso_port]"r"( BITBAND_MISO_PORT ),
         [sck_mask]"r"( SCK_MASK ),
         [sck_port]"r"( SCK_PORT_PLUS30 )
@@ -238,7 +240,7 @@
   }
 
   // all the others
-  static uint16_t spiDelayNS = 4000; // 4000ns => 125khz
+  static uint32_t spiDelayCyclesX4 = 4 * (F_CPU) / 1000000; // 4µs => 125khz
 
   static uint8_t spiTransferX(uint8_t b) { // using Mode 0
     int bits = 8;
@@ -247,12 +249,12 @@
       b <<= 1; // little setup time
 
       WRITE(SD_SCK_PIN, HIGH);
-      DELAY_NS_VAR(spiDelayNS);
+      DELAY_CYCLES(spiDelayCyclesX4);
 
       b |= (READ(SD_MISO_PIN) != 0);
 
       WRITE(SD_SCK_PIN, LOW);
-      DELAY_NS_VAR(spiDelayNS);
+      DELAY_CYCLES(spiDelayCyclesX4);
     } while (--bits);
     return b;
   }
@@ -350,7 +352,7 @@
   static void spiRxBlock0(uint8_t *ptr, uint32_t todo) {
     uint32_t bin = 0;
     uint32_t work = 0;
-    uint32_t BITBAND_MISO_PORT = BITBAND_ADDRESS(((uint32_t)PORT(SD_MISO_PIN))+0x3C, PIN_SHIFT(SD_MISO_PIN)); /* PDSR of port in bitband area */
+    uint32_t BITBAND_MISO_PORT = BITBAND_ADDRESS( ((uint32_t)PORT(SD_MISO_PIN))+0x3C, PIN_SHIFT(SD_MISO_PIN));  /* PDSR of port in bitband area */
     uint32_t SCK_PORT_PLUS30 = ((uint32_t) PORT(SD_SCK_PIN)) + 0x30;    /* SODR of port */
     uint32_t SCK_MASK = PIN_MASK(SD_SCK_PIN);
 
@@ -412,10 +414,10 @@
       A("strb.w %[bin], [%[ptr]], #1")             /* Store read value into buffer, increment buffer pointer */
       A("bne.n loop%=")                            /* Repeat until done */
 
-      : [ptr]"+r"( ptr ),
-        [todo]"+r"( todo ),
-        [bin]"+r"( bin ),
-        [work]"+r"( work )
+      : [ptr]"+r"(ptr),
+        [todo]"+r"(todo),
+        [bin]"+r"(bin),
+        [work]"+r"(work)
       : [bitband_miso_port]"r"( BITBAND_MISO_PORT ),
         [sck_mask]"r"( SCK_MASK ),
         [sck_port]"r"( SCK_PORT_PLUS30 )
@@ -435,7 +437,7 @@
     } while (--todo);
   }
 
-  // Pointers to generic functions for block transfers
+  // Pointers to generic functions for block tranfers
   static pfnSpiTxBlock spiTxBlock = (pfnSpiTxBlock)spiTxBlockX;
   static pfnSpiRxBlock spiRxBlock = (pfnSpiRxBlock)spiRxBlockX;
 
@@ -508,7 +510,7 @@
         spiRxBlock = (pfnSpiRxBlock)spiRxBlockX;
         break;
       default:
-        spiDelayNS = 4000 >> (6 - spiRate); // spiRate of 2 gives the maximum error with current CPU
+        spiDelayCyclesX4 = ((F_CPU) / 1000000) >> (6 - spiRate) << 2; // spiRate of 2 gives the maximum error with current CPU
         spiTransferTx = (pfnSpiTransfer)spiTransferX;
         spiTransferRx = (pfnSpiTransfer)spiTransferX;
         spiTxBlock = (pfnSpiTxBlock)spiTxBlockX;
@@ -592,16 +594,21 @@
       SPI_Configure(SPI0, ID_SPI0, SPI_MR_MSTR | SPI_MR_MODFDIS | SPI_MR_PS);
       SPI_Enable(SPI0);
 
-      SET_OUTPUT(DAC0_SYNC_PIN);
+      SET_OUTPUT(DAC0_SYNC);
       #if HAS_MULTI_EXTRUDER
-        OUT_WRITE(DAC1_SYNC_PIN, HIGH);
+        SET_OUTPUT(DAC1_SYNC);
+        WRITE(DAC1_SYNC, HIGH);
       #endif
-      WRITE(DAC0_SYNC_PIN, HIGH);
-      OUT_WRITE(SPI_EEPROM1_CS_PIN, HIGH);
-      OUT_WRITE(SPI_EEPROM2_CS_PIN, HIGH);
-      OUT_WRITE(SPI_FLASH_CS_PIN, HIGH);
-      OUT_WRITE(SD_SS_PIN, HIGH);
-      WRITE(SD_SS_PIN, LOW);
+      SET_OUTPUT(SPI_EEPROM1_CS);
+      SET_OUTPUT(SPI_EEPROM2_CS);
+      SET_OUTPUT(SPI_FLASH_CS);
+      WRITE(DAC0_SYNC, HIGH);
+      WRITE(SPI_EEPROM1_CS, HIGH);
+      WRITE(SPI_EEPROM2_CS, HIGH);
+      WRITE(SPI_FLASH_CS, HIGH);
+      WRITE(SD_SS_PIN, HIGH);
+
+      OUT_WRITE(SDSS, LOW);
 
       PIO_Configure(
         g_APinDescription[SPI_PIN].pPort,
@@ -766,7 +773,7 @@
 
       // Disable PIO on A26 and A27
       REG_PIOA_PDR = 0x0C000000;
-      OUT_WRITE(SD_SS_PIN, HIGH);
+      OUT_WRITE(SDSS, HIGH);
 
       // Reset SPI0 (from sam lib)
       SPI0->SPI_CR = SPI_CR_SPIDIS;

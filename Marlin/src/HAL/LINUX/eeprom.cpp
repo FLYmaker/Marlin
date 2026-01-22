@@ -35,7 +35,7 @@
 uint8_t buffer[MARLIN_EEPROM_SIZE];
 char filename[] = "eeprom.dat";
 
-size_t PersistentStore::capacity() { return MARLIN_EEPROM_SIZE - eeprom_exclude_size; }
+size_t PersistentStore::capacity() { return MARLIN_EEPROM_SIZE; }
 
 bool PersistentStore::access_start() {
   const char eeprom_erase_value = 0xFF;
@@ -45,7 +45,7 @@ bool PersistentStore::access_start() {
   fseek(eeprom_file, 0L, SEEK_END);
   std::size_t file_size = ftell(eeprom_file);
 
-  if (file_size < long(MARLIN_EEPROM_SIZE)) {
+  if (file_size < MARLIN_EEPROM_SIZE) {
     memset(buffer + file_size, eeprom_erase_value, MARLIN_EEPROM_SIZE - file_size);
   }
   else {
@@ -69,12 +69,12 @@ bool PersistentStore::write_data(int &pos, const uint8_t *value, size_t size, ui
   std::size_t bytes_written = 0;
 
   for (std::size_t i = 0; i < size; i++) {
-    buffer[pos + i] = value[i];
-    bytes_written++;
+    buffer[pos+i] = value[i];
+    bytes_written ++;
   }
 
   crc16(crc, value, size);
-  pos += size;
+  pos = pos + size;
   return (bytes_written != size);  // return true for any error
 }
 
@@ -82,21 +82,21 @@ bool PersistentStore::read_data(int &pos, uint8_t *value, const size_t size, uin
   std::size_t bytes_read = 0;
   if (writing) {
     for (std::size_t i = 0; i < size; i++) {
-      value[i] = buffer[pos + i];
-      bytes_read++;
+      value[i] = buffer[pos+i];
+      bytes_read ++;
     }
     crc16(crc, value, size);
   }
   else {
     uint8_t temp[size];
     for (std::size_t i = 0; i < size; i++) {
-      temp[i] = buffer[pos + i];
-      bytes_read++;
+      temp[i] = buffer[pos+i];
+      bytes_read ++;
     }
     crc16(crc, temp, size);
   }
 
-  pos += size;
+  pos = pos + size;
   return bytes_read != size;  // return true for any error
 }
 

@@ -68,7 +68,7 @@
 #ifndef PCA9632_BLU
   #define PCA9632_BLU 0x04
 #endif
-#if ENABLED(PCA9632_RGBW) && !defined(PCA9632_WHT)
+#if HAS_WHITE_LED && !defined(PCA9632_WHT)
   #define PCA9632_WHT 0x06
 #endif
 
@@ -93,7 +93,9 @@ static void PCA9632_WriteRegister(const byte addr, const byte regadd, const byte
 }
 
 static void PCA9632_WriteAllRegisters(const byte addr, const byte regadd, const byte vr, const byte vg, const byte vb
-  OPTARG(PCA9632_RGBW, const byte vw)
+  #if ENABLED(PCA9632_RGBW)
+    , const byte vw
+  #endif
 ) {
   #if DISABLED(PCA9632_NO_AUTO_INC)
     uint8_t data[4];
@@ -124,7 +126,7 @@ static void PCA9632_WriteAllRegisters(const byte addr, const byte regadd, const 
   }
 #endif
 
-void PCA9632_set_led_color(const LED1Color_t &color) {
+void PCA9632_set_led_color(const LEDColor &color) {
   Wire.begin();
   if (!PCA_init) {
     PCA_init = 1;
@@ -135,17 +137,22 @@ void PCA9632_set_led_color(const LED1Color_t &color) {
   const byte LEDOUT = (color.r ? LED_PWM << PCA9632_RED : 0)
                     | (color.g ? LED_PWM << PCA9632_GRN : 0)
                     | (color.b ? LED_PWM << PCA9632_BLU : 0)
-                    | (TERN0(PCA9632_RGBW, color.w ? LED_PWM << PCA9632_WHT : 0));
+                    #if ENABLED(PCA9632_RGBW)
+                      | (color.w ? LED_PWM << PCA9632_WHT : 0)
+                    #endif
+                    ;
 
   PCA9632_WriteAllRegisters(PCA9632_ADDRESS,PCA9632_PWM0, color.r, color.g, color.b
-    OPTARG(PCA9632_RGBW, color.w)
+    #if ENABLED(PCA9632_RGBW)
+      , color.w
+    #endif
   );
   PCA9632_WriteRegister(PCA9632_ADDRESS,PCA9632_LEDOUT, LEDOUT);
 }
 
 #if ENABLED(PCA9632_BUZZER)
 
-  void PCA9632_buzz(const long, const uint16_t/*=0*/) {
+  void PCA9632_buzz(const long, const uint16_t) {
     uint8_t data[] = PCA9632_BUZZER_DATA;
     Wire.beginTransmission(I2C_ADDRESS(PCA9632_ADDRESS));
     Wire.write(data, sizeof(data));

@@ -23,12 +23,10 @@
 
 /**
  * Dreammaker Overlord v1.1 pin assignments
- * Schematic: https://github.com/jdpiercy/Overlord-Pro/blob/master/Motherboard/Schematic.pdf
- * ATmega2560
  */
 
 #if HOTENDS > 2 || E_STEPPERS > 2
-  #error "Overlord supports up to 2 hotends / E steppers."
+  #error "Overlord Controller supports up to 2 hotends / E-steppers. Comment out this line to continue."
 #endif
 
 #include "env_validate.h"
@@ -51,7 +49,7 @@
   #define Z_MIN_PROBE_PIN                     46  // JP4, Tfeed1
 #endif
 
-#ifndef FIL_RUNOUT_PIN
+#if ENABLED(FILAMENT_RUNOUT_SENSOR)
   #define FIL_RUNOUT_PIN                      44  // JP3, Tfeed2
 #endif
 
@@ -94,12 +92,12 @@
 #define HEATER_1_PIN                           3
 #define HEATER_BED_PIN                         4
 
-#define FAN0_PIN                               7  // material cooling fan
+#define FAN_PIN                                7  // material cooling fan
 
 //
 // SD Card
 //
-#define SD_SS_PIN                             53
+#define SDSS                                  53
 #define SD_DETECT_PIN                         38
 
 //
@@ -121,12 +119,11 @@
 //
 // LCD / Controller
 //
-
-#if HAS_WIRED_LCD
+#if HAS_MARLINUI_U8GLIB
   // OVERLORD OLED pins
   #define LCD_PINS_RS                         20
   #define LCD_PINS_D5                         21
-  #define LCD_PINS_EN                         15
+  #define LCD_PINS_ENABLE                     15
   #define LCD_PINS_D4                         14
   #define LCD_PINS_D6                          5
   #define LCD_PINS_D7                          6
@@ -138,7 +135,7 @@
 #if IS_NEWPANEL
   #define BTN_ENC                             16  // Enter Pin
   #define BTN_UP                              19  // Button UP Pin
-  #define BTN_DOWN                            17  // Button DOWN Pin
+  #define BTN_DWN                             17  // Button DOWN Pin
 #endif
 
 // Additional connectors/pins on the Overlord V1.X board

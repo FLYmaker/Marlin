@@ -39,23 +39,37 @@
   #include "../../feature/bedlevel/bedlevel.h"
 #endif
 
-void _goto_manual_move_z(const float);
-
-// Global storage - TODO: Keep wizard/process data in a 'ui.scratch' union.
+// Global storage
 float z_offset_backup, calculated_z_offset, z_offset_ref;
 
-// "Done" - Set the offset, re-enable leveling, go back to the previous screen.
-void set_offset_and_go_back(const float z) {
+#if ENABLED(HAS_LEVELING)
+  bool leveling_was_active;
+#endif
+
+inline void z_clearance_move() {
+  do_z_clearance(
+    #ifdef Z_AFTER_HOMING
+      Z_AFTER_HOMING
+    #elif defined(Z_HOMING_HEIGHT)
+      Z_HOMING_HEIGHT
+    #else
+      10
+    #endif
+  );
+}
+
+void set_offset_and_go_back(const_float_t z) {
   probe.offset.z = z;
   SET_SOFT_ENDSTOP_LOOSE(false);
-  TERN_(HAS_LEVELING, set_bed_leveling_enabled(menu_leveling_was_active));
+  TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_was_active));
   ui.goto_previous_screen_no_defer();
 }
 
-/**
- * @fn probe_offset_wizard_menu
- * @brief Display a menu to Move Z, Cancel, or signal Done
- */
+void _goto_manual_move_z(const_float_t scale) {
+  ui.manual_move.menu_scale = scale;
+  ui.goto_screen(lcd_move_z);
+}
+
 void probe_offset_wizard_menu() {
   START_MENU();
   calculated_z_offset = probe.offset.z + current_position.z - z_offset_ref;
@@ -63,49 +77,52 @@ void probe_offset_wizard_menu() {
   if (LCD_HEIGHT >= 4)
     STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
 
-  STATIC_ITEM_F(F("Z"), SS_CENTER, ftostr42_52(current_position.z));
-  STATIC_ITEM_N(Z_AXIS, MSG_ZPROBE_OFFSET_N, SS_FULL, ftostr42_52(calculated_z_offset));
+  STATIC_ITEM_P(PSTR("Z="), SS_CENTER, ftostr42_52(current_position.z));
+  STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_LEFT, ftostr42_52(calculated_z_offset));
 
-  SUBMENU_S(F("1.0"), MSG_MOVE_N_MM, []{ _goto_manual_move_z( 1.0f); });
-  SUBMENU_S(F("0.1"), MSG_MOVE_N_MM, []{ _goto_manual_move_z( 0.1f); });
+  SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+  SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
 
-  if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f)
-    SUBMENU_f(F(STRINGIFY(FINE_MANUAL_MOVE)), MSG_MOVE_N_MM, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+  if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f) {
+    char tmp[20], numstr[10];
+    // Determine digits needed right of decimal
+    const uint8_t digs = !UNEAR_ZERO((FINE_MANUAL_MOVE) * 1000 - int((FINE_MANUAL_MOVE) * 1000)) ? 4 :
+                         !UNEAR_ZERO((FINE_MANUAL_MOVE) *  100 - int((FINE_MANUAL_MOVE) *  100)) ? 3 : 2;
+    sprintf_P(tmp, GET_TEXT(MSG_MOVE_N_MM), dtostrf(FINE_MANUAL_MOVE, 1, digs, numstr));
+    #if DISABLED(HAS_GRAPHICAL_TFT)
+      SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+      MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+      lcd_put_u8str(tmp);
+      MENU_ITEM_ADDON_END();
+    #else
+      SUBMENU_P(tmp, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+    #endif
+  }
 
   ACTION_ITEM(MSG_BUTTON_DONE, []{
     set_offset_and_go_back(calculated_z_offset);
     current_position.z = z_offset_ref;  // Set Z to z_offset_ref, as we can expect it is at probe height
     sync_plan_position();
-    do_z_post_clearance();
+    z_clearance_move();                 // Raise Z as if it was homed
   });
 
   ACTION_ITEM(MSG_BUTTON_CANCEL, []{
     set_offset_and_go_back(z_offset_backup);
-    // On cancel the Z position needs correction
+    // If wizard-homing was done by probe with PROBE_OFFSET_WIZARD_START_Z
     #if HOMING_Z_WITH_PROBE && defined(PROBE_OFFSET_WIZARD_START_Z)
-      set_axis_never_homed(Z_AXIS);
-      queue.inject(F("G28Z"));
-    #else
-      do_z_post_clearance();
+      set_axis_never_homed(Z_AXIS); // On cancel the Z position needs correction
+      queue.inject_P(PSTR("G28Z"));
+    #else // Otherwise do a Z clearance move like after Homing
+      z_clearance_move();
     #endif
   });
 
   END_MENU();
 }
 
-/**
- * @fn prepare_for_probe_offset_wizard
- * @brief Prepare the Probe Offset Wizard to do user interaction.
- * @details
- *   1. Probe a defined point (or the center) for an initial Probe Reference Z (relative to the homed Z0).
- *      (When homing with the probe, this Z0 is suspect until 'M851 Z' is properly tuned.
- *       When homing with a Z endstop Z0 is suspect until M206 is properly tuned.)
- *   2. Stow the probe and move the nozzle over the probed point.
- *   3. Go to the probe_offset_wizard_menu() screen for Z position adjustment to acquire Z0.
- */
 void prepare_for_probe_offset_wizard() {
   #if defined(PROBE_OFFSET_WIZARD_XY_POS) || !HOMING_Z_WITH_PROBE
-    if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT_F(MSG_PROBE_WIZARD_PROBING));
+    if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT(MSG_PROBE_WIZARD_PROBING));
 
     if (ui.wait_for_move) return;
 
@@ -117,7 +134,7 @@ void prepare_for_probe_offset_wizard() {
 
     // Probe for Z reference
     ui.wait_for_move = true;
-    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE);
+    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE, 0, true);
     ui.wait_for_move = false;
 
     // Stow the probe, as the last call to probe.probe_at_point(...) left
@@ -130,8 +147,8 @@ void prepare_for_probe_offset_wizard() {
   // Move Nozzle to Probing/Homing Position
   ui.wait_for_move = true;
   current_position += probe.offset_xy;
-  line_to_current_position(XY_PROBE_FEEDRATE_MM_S);
-  ui.synchronize(GET_TEXT_F(MSG_PROBE_WIZARD_MOVING));
+  line_to_current_position(MMM_TO_MMS(XY_PROBE_FEEDRATE));
+  ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
   ui.wait_for_move = false;
 
   SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
@@ -141,8 +158,6 @@ void prepare_for_probe_offset_wizard() {
   ui.defer_status_screen();
 }
 
-// Set up the wizard, initiate homing with "Homing XYZ" message.
-// When homing is completed go to prepare_for_probe_offset_wizard().
 void goto_probe_offset_wizard() {
   ui.defer_status_screen();
   set_all_unhomed();
@@ -156,14 +171,13 @@ void goto_probe_offset_wizard() {
 
   // Store Bed-Leveling-State and disable
   #if HAS_LEVELING
-    menu_leveling_was_active = planner.leveling_active;
+    leveling_was_active = planner.leveling_active;
     set_bed_leveling_enabled(false);
   #endif
 
   // Home all axes
   queue.inject_P(G28_STR);
 
-  // Show "Homing XYZ" display until homing completes
   ui.goto_screen([]{
     _lcd_draw_homing();
     if (all_axes_homed()) {

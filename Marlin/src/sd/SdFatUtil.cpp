@@ -31,7 +31,7 @@
 
 #include "../inc/MarlinConfig.h"
 
-#if HAS_MEDIA
+#if ENABLED(SDSUPPORT)
 
 #include "SdFatUtil.h"
 #include <string.h>
@@ -48,7 +48,7 @@
     return &top - reinterpret_cast<char*>(sbrk(0));
   }
 
-#elif defined(__AVR__)
+#else
 
   extern char* __brkval;
   extern char __bss_end;
@@ -59,4 +59,4 @@
 
 #endif
 
-#endif // HAS_MEDIA
+#endif // SDSUPPORT

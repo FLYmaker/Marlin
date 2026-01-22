@@ -35,7 +35,7 @@ public:
    */
   struct SerialState {
     /**
-     * G-Code line number handling. Hosts may include line numbers when sending
+     * GCode line number handling. Hosts may include line numbers when sending
      * commands to Marlin, and lines will be checked for sequentiality.
      * M110 N<int> sets the current line number.
      */
@@ -48,7 +48,7 @@ public:
   static SerialState serial_state[NUM_SERIAL]; //!< Serial states for each serial port
 
   /**
-   * G-Code Command Queue
+   * GCode Command Queue
    * A simple (circular) ring buffer of BUFSIZE command strings.
    *
    * Commands are copied into this buffer by the command injectors
@@ -59,7 +59,7 @@ public:
   struct CommandLine {
     char buffer[MAX_CMD_SIZE];      //!< The command buffer
     bool skip_ok;                   //!< Skip sending ok when command is processed?
-    #if HAS_MULTI_SERIAL
+    #if ENABLED(HAS_MULTI_SERIAL)
       serial_index_t port;          //!< Serial port the command was received on
     #endif
   };
@@ -78,15 +78,17 @@ public:
     inline void clear() { length = index_r = index_w = 0; }
 
     void advance_pos(uint8_t &p, const int inc) { if (++p >= BUFSIZE) p = 0; length += inc; }
-    inline void advance_w() { advance_pos(index_w, 1); }
-    inline void advance_r() { if (length) advance_pos(index_r, -1); }
 
-    void commit_command(const bool skip_ok
-      OPTARG(HAS_MULTI_SERIAL, serial_index_t serial_ind=serial_index_t())
+    void commit_command(bool skip_ok
+      #if HAS_MULTI_SERIAL
+        , serial_index_t serial_ind = serial_index_t()
+      #endif
     );
 
-    bool enqueue(const char *cmd, const bool skip_ok=true
-      OPTARG(HAS_MULTI_SERIAL, serial_index_t serial_ind=serial_index_t())
+    bool enqueue(const char *cmd, bool skip_ok = true
+      #if HAS_MULTI_SERIAL
+        , serial_index_t serial_ind = serial_index_t()
+      #endif
     );
 
     void ok_to_send();
@@ -128,40 +130,31 @@ public:
    * Don't inject comments or use leading spaces!
    * Aborts the current PROGMEM queue so only use for one or two commands.
    */
-  static void inject_P(PGM_P const pgcode) { injected_commands_P = pgcode; }
-  static void inject(FSTR_P const fgcode) { inject_P(FTOP(fgcode)); }
+  static inline void inject_P(PGM_P const pgcode) { injected_commands_P = pgcode; }
 
   /**
    * Enqueue command(s) to run from SRAM. Drained by process_injected_command().
    * Aborts the current SRAM queue so only use for one or two commands.
    */
-  static void inject(const char * const gcode) {
-    strlcpy(injected_commands, gcode, sizeof(injected_commands));
+  static inline void inject(char * const gcode) {
+    strncpy(injected_commands, gcode, sizeof(injected_commands) - 1);
   }
 
   /**
    * Enqueue and return only when commands are actually enqueued
    */
-  static void enqueue_one_now(const char * const cmd);
-  static void enqueue_one_now(FSTR_P const fcmd);
+  static void enqueue_one_now(const char *cmd);
 
   /**
    * Attempt to enqueue a single G-code command
    * and return 'true' if successful.
    */
-  static bool enqueue_one(FSTR_P const fcmd);
-
-  /**
-   * Enqueue with Serial Echo
-   * Return true on success
-   */
-  static bool enqueue_one(const char *cmd);
+  static bool enqueue_one_P(PGM_P const pgcode);
 
   /**
    * Enqueue from program memory and return only when commands are actually enqueued
    */
-  static void enqueue_now_P(PGM_P const pcmd);
-  static void enqueue_now(FSTR_P const fcmd) { enqueue_now_P(FTOP(fcmd)); }
+  static void enqueue_now_P(PGM_P const cmd);
 
   /**
    * Check whether there are any commands yet to be executed
@@ -195,7 +188,7 @@ public:
    *   P<int>  Planner space remaining
    *   B<int>  Block queue space remaining
    */
-  static void ok_to_send() { ring_buffer.ok_to_send(); }
+  static inline void ok_to_send() { ring_buffer.ok_to_send(); }
 
   /**
    * Clear the serial line and request a resend of
@@ -203,67 +196,16 @@ public:
    */
   static void flush_and_request_resend(const serial_index_t serial_ind);
 
-  #if (defined(ARDUINO_ARCH_STM32F4) || defined(ARDUINO_ARCH_STM32)) && defined(USBCON)
-    static void flush_rx();
-  #else
-    static void flush_rx() {}
-  #endif
-
   /**
    * (Re)Set the current line number for the last received command
    */
-  static void set_current_line_number(long n) { serial_state[ring_buffer.command_port().index].last_N = n; }
-
-  /**
-   * Get the current line number for the last received command
-   */
-  static long get_current_line_number() { return serial_state[ring_buffer.command_port().index].last_N; }
-
-  #if ENABLED(BUFFER_MONITORING)
-
-    private:
-
-    /**
-     * Track buffer underruns
-     */
-    static uint32_t command_buffer_underruns, planner_buffer_underruns;
-    static bool command_buffer_empty, planner_buffer_empty;
-    static millis_t max_command_buffer_empty_duration, max_planner_buffer_empty_duration,
-                    command_buffer_empty_at, planner_buffer_empty_at;
-
-    /**
-     * Report buffer statistics to the host to be able to detect buffer underruns
-     *
-     * Returns "D576 " followed by:
-     *  P<uint>   Planner space remaining
-     *  B<uint>   Command buffer space remaining
-     *  PU<uint>  Number of planner buffer underruns since last report
-     *  PD<uint>  Max time in ms the planner buffer was empty since last report
-     *  BU<uint>  Number of command buffer underruns since last report
-     *  BD<uint>  Max time in ms the command buffer was empty since last report
-     */
-    static void report_buffer_statistics();
-
-    static uint8_t auto_buffer_report_interval;
-    static millis_t next_buffer_report_ms;
-
-    public:
-
-    static void auto_report_buffer_statistics();
-
-    static void set_auto_report_interval(uint8_t v) {
-      NOMORE(v, 60);
-      auto_buffer_report_interval = v;
-      next_buffer_report_ms = millis() + 1000UL * v;
-    }
-
-  #endif // BUFFER_MONITORING
+  static inline void set_current_line_number(long n) { serial_state[ring_buffer.command_port().index].last_N = n; }
 
 private:
 
   static void get_serial_commands();
 
-  #if HAS_MEDIA
+  #if ENABLED(SDSUPPORT)
     static void get_sdcard_commands();
   #endif
 
@@ -273,7 +215,13 @@ private:
   // Process the next "immediate" command (SRAM)
   static bool process_injected_command();
 
-  static void gcode_line_error(FSTR_P const ferr, const serial_index_t serial_ind);
+  /**
+   * Enqueue with Serial Echo
+   * Return true on success
+   */
+  static bool enqueue_one(const char *cmd);
+
+  static void gcode_line_error(PGM_P const err, const serial_index_t serial_ind);
 
   friend class GcodeSuite;
 };

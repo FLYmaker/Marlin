@@ -19,7 +19,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-
 #include "../inc/MarlinConfigPre.h"
 
 #if ENABLED(DIRECT_STEPPING)
@@ -52,13 +51,13 @@ namespace DirectStepping {
   volatile bool SerialPageManager<Cfg>::fatal_error;
 
   template<typename Cfg>
-  volatile PageState SerialPageManager<Cfg>::page_states[Cfg::PAGE_COUNT];
+  volatile PageState SerialPageManager<Cfg>::page_states[Cfg::NUM_PAGES];
 
   template<typename Cfg>
   volatile bool SerialPageManager<Cfg>::page_states_dirty;
 
   template<typename Cfg>
-  uint8_t SerialPageManager<Cfg>::pages[Cfg::PAGE_COUNT][Cfg::PAGE_SIZE];
+  uint8_t SerialPageManager<Cfg>::pages[Cfg::NUM_PAGES][Cfg::PAGE_SIZE];
 
   template<typename Cfg>
   uint8_t SerialPageManager<Cfg>::checksum;
@@ -74,7 +73,7 @@ namespace DirectStepping {
 
   template <typename Cfg>
   void SerialPageManager<Cfg>::init() {
-    for (int i = 0 ; i < Cfg::PAGE_COUNT ; i++)
+    for (int i = 0 ; i < Cfg::NUM_PAGES ; i++)
       page_states[i] = PageState::FREE;
 
     fatal_error = false;
@@ -143,16 +142,14 @@ namespace DirectStepping {
           // special case for 8-bit, check if rolled back to 0
           if (Cfg::DIRECTIONAL || !write_page_size) { // full 256 bytes
             if (write_byte_idx) return true;
+          } else {
+            if (write_byte_idx < write_page_size) return true;
           }
-          else if (write_byte_idx < write_page_size)
-            return true;
+        } else if (Cfg::DIRECTIONAL) {
+          if (write_byte_idx != Cfg::PAGE_SIZE) return true;
+        } else {
+          if (write_byte_idx < write_page_size) return true;
         }
-        else if (Cfg::DIRECTIONAL) {
-          if (write_byte_idx != Cfg::PAGE_SIZE)
-            return true;
-        }
-        else if (write_byte_idx < write_page_size)
-          return true;
 
         state = State::CHECKSUM;
         return true;
@@ -163,10 +160,11 @@ namespace DirectStepping {
         return true;
       }
       case State::UNFAIL:
-        if (c == 0)
+        if (c == 0) {
           set_page_state(write_page_idx, PageState::FREE);
-        else
+        } else {
           fatal_error = true;
+        }
         state = State::MONITOR;
         return true;
     }
@@ -175,7 +173,7 @@ namespace DirectStepping {
   template <typename Cfg>
   void SerialPageManager<Cfg>::write_responses() {
     if (fatal_error) {
-      marlin.kill(GET_TEXT_F(MSG_BAD_PAGE));
+      kill(GET_TEXT(MSG_BAD_PAGE));
       return;
     }
 
@@ -184,10 +182,10 @@ namespace DirectStepping {
 
     SERIAL_CHAR(Cfg::CONTROL_CHAR);
     constexpr int state_bits = 2;
-    constexpr int n_bytes = Cfg::PAGE_COUNT >> state_bits;
+    constexpr int n_bytes = Cfg::NUM_PAGES >> state_bits;
     volatile uint8_t bits_b[n_bytes] = { 0 };
 
-    for (page_idx_t i = 0 ; i < Cfg::PAGE_COUNT ; i++) {
+    for (page_idx_t i = 0 ; i < Cfg::NUM_PAGES ; i++) {
       bits_b[i >> state_bits] |= page_states[i] << ((i * state_bits) & 0x7);
     }
 

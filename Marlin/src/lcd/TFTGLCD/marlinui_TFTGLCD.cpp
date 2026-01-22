@@ -52,21 +52,9 @@
 #include "../../module/planner.h"
 #include "../../module/motion.h"
 
-#if DISABLED(LCD_PROGRESS_BAR) && ALL(FILAMENT_LCD_DISPLAY, HAS_MEDIA)
+#if DISABLED(LCD_PROGRESS_BAR) && BOTH(FILAMENT_LCD_DISPLAY, SDSUPPORT)
   #include "../../feature/filwidth.h"
   #include "../../gcode/parser.h"
-#endif
-
-#if ANY(HAS_COOLER, LASER_COOLANT_FLOW_METER)
-  #include "../../feature/cooler.h"
-#endif
-
-#if ENABLED(I2C_AMMETER)
-  #include "../../feature/ammeter.h"
-#endif
-
-#if HAS_CUTTER
-  #include "../../feature/spindle_laser.h"
 #endif
 
 #if ENABLED(AUTO_BED_LEVELING_UBL)
@@ -76,12 +64,12 @@
 TFTGLCD lcd;
 
 #define ICON_LOGO       B00000001
-#define ICON_TEMP1      B00000010    // Hotend 1
-#define ICON_TEMP2      B00000100    // Hotend 2
-#define ICON_TEMP3      B00001000    // Hotend 3
+#define ICON_TEMP1      B00000010    //hotend 1
+#define ICON_TEMP2      B00000100    //hotend 2
+#define ICON_TEMP3      B00001000    //hotend 3
 #define ICON_BED        B00010000
 #define ICON_FAN        B00100000
-#define ICON_HOT        B01000000    // When any T > 50deg
+#define ICON_HOT        B01000000    //when any T > 50deg
 #define PIC_MASK        0x7F
 
 // LEDs not used, for compatibility with Smoothieware
@@ -98,7 +86,7 @@ TFTGLCD lcd;
 #define COLOR_EDIT      '#'
 #define COLOR_ERROR     '!'
 
-#ifdef CONVERT_TO_EXT_ASCII   //use standard pseudographic symbols in ASCII table
+#ifdef CONVERT_TO_EXT_ASCII   //use standart pseudographic symbols in ASCII table
   #define LR            179   //vertical line
   #define TRC           191   //top right corner
   #define BLC           192   //bottom left corner
@@ -135,13 +123,13 @@ static unsigned char framebuffer[FBSIZE];
 static unsigned char *fb;
 static uint8_t cour_line;
 static uint8_t picBits, ledBits, hotBits;
-static bool panel_detected = false;
+static uint8_t PanelDetected = 0;
 
 // Different platforms use different SPI methods
 #if ANY(__AVR__, TARGET_LPC1768, __STM32F1__, ARDUINO_ARCH_SAM, __SAMD51__, __MK20DX256__, __MK64FX512__)
   #define SPI_SEND_ONE(V) SPI.transfer(V);
   #define SPI_SEND_TWO(V) SPI.transfer16(V);
-#elif ANY(STM32F4xx, STM32F1xx)
+#elif EITHER(STM32F4xx, STM32F1xx)
   #define SPI_SEND_ONE(V) SPI.transfer(V, SPI_CONTINUE);
   #define SPI_SEND_TWO(V) SPI.transfer16(V, SPI_CONTINUE);
 #elif defined(ARDUINO_ARCH_ESP32)
@@ -151,7 +139,7 @@ static bool panel_detected = false;
 
 #if ANY(__AVR__, ARDUINO_ARCH_SAM, __SAMD51__, __MK20DX256__, __MK64FX512__)
   #define SPI_SEND_SOME(V,L,Z)  SPI.transfer(&V[Z], L);
-#elif ANY(STM32F4xx, STM32F1xx)
+#elif EITHER(STM32F4xx, STM32F1xx)
   #define SPI_SEND_SOME(V,L,Z)  SPI.transfer(&V[Z], L, SPI_CONTINUE);
 #elif ANY(TARGET_LPC1768, __STM32F1__, ARDUINO_ARCH_ESP32)
   #define SPI_SEND_SOME(V,L,Z)  do{ for (uint16_t i = 0; i < L; i++) SPI_SEND_ONE(V[(Z)+i]); }while(0)
@@ -169,15 +157,15 @@ void TFTGLCD::clear_buffer() {
 
 // Clear panel's screen
 void TFTGLCD::clr_screen() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     WRITE(TFTGLCD_CS, LOW);
     SPI_SEND_ONE(CLR_SCREEN);
     WRITE(TFTGLCD_CS, HIGH);
   #else
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS)); // Transmit to LCD via I2C
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);  //set I2C device address
     Wire.write(CLR_SCREEN);
-    Wire.endTransmission();                           // Send the data
+    Wire.endTransmission(); //transmit data
   #endif
 }
 
@@ -199,7 +187,7 @@ void TFTGLCD::print(const char *line) {
 
 // For menu
 void TFTGLCD::print_line() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     WRITE(TFTGLCD_CS, LOW);
     SPI_SEND_ONE(LCD_PUT);
@@ -207,7 +195,7 @@ void TFTGLCD::print_line() {
     SPI_SEND_SOME(framebuffer, LCD_WIDTH, cour_line * LCD_WIDTH);
     WRITE(TFTGLCD_CS, HIGH);
   #else
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));  //set I2C device address
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);  //set I2C device address
     Wire.write(LCD_PUT);
     Wire.write(cour_line);
     Wire.write(&framebuffer[cour_line * LCD_WIDTH], LCD_WIDTH);  //transfer 1 line to txBuffer
@@ -217,7 +205,7 @@ void TFTGLCD::print_line() {
 }
 
 void TFTGLCD::print_screen() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   framebuffer[FBSIZE - 2] = picBits & PIC_MASK;
   framebuffer[FBSIZE - 1] = ledBits;
   #if ENABLED(TFTGLCD_PANEL_SPI)
@@ -229,18 +217,18 @@ void TFTGLCD::print_screen() {
   #else
     uint8_t r;
     // Send framebuffer to panel by line
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
     // First line
     Wire.write(LCD_WRITE);
     Wire.write(&framebuffer[0], LCD_WIDTH);
     Wire.endTransmission();
     for (r = 1; r < (LCD_HEIGHT - 1); r++) {
-      Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+      Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
       Wire.write(&framebuffer[r * LCD_WIDTH], LCD_WIDTH);
       Wire.endTransmission();
     }
     // Last line
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
     Wire.write(&framebuffer[r * LCD_WIDTH], LCD_WIDTH);
     Wire.write(&framebuffer[FBSIZE - 2], 2);
     Wire.endTransmission();
@@ -248,14 +236,14 @@ void TFTGLCD::print_screen() {
 }
 
 void TFTGLCD::setContrast(uint16_t contrast) {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     WRITE(TFTGLCD_CS, LOW);
     SPI_SEND_ONE(CONTRAST);
     SPI_SEND_ONE((uint8_t)contrast);
     WRITE(TFTGLCD_CS, HIGH);
   #else
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
     Wire.write(CONTRAST);
     Wire.write((uint8_t)contrast);
     Wire.endTransmission();
@@ -265,8 +253,8 @@ void TFTGLCD::setContrast(uint16_t contrast) {
 extern volatile int8_t encoderDiff;
 
 // Read buttons and encoder states
-uint8_t MarlinUI::read_slow_buttons() {
-  if (!panel_detected)    return 0;
+uint8_t MarlinUI::read_slow_buttons(void) {
+  if (!PanelDetected)    return 0;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     uint8_t b = 0;
     WRITE(TFTGLCD_CS, LOW);
@@ -283,14 +271,14 @@ uint8_t MarlinUI::read_slow_buttons() {
     WRITE(TFTGLCD_CS, HIGH);
     return b;
   #else
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
     Wire.write(READ_ENCODER);
     Wire.endTransmission();
     #ifdef __AVR__
-      Wire.requestFrom(uint8_t(LCD_I2C_ADDRESS), 2, 0, 0, 1);
+      Wire.requestFrom((uint8_t)LCD_I2C_ADDRESS, 2, 0, 0, 1);
     #elif defined(STM32F1)
-      Wire.requestFrom(uint8_t(LCD_I2C_ADDRESS), uint8_t(2));
-    #elif ANY(STM32F4xx, TARGET_LPC1768)
+      Wire.requestFrom((uint8_t)LCD_I2C_ADDRESS, (uint8_t)2);
+    #elif EITHER(STM32F4xx, TARGET_LPC1768)
       Wire.requestFrom(LCD_I2C_ADDRESS, 2);
     #endif
     encoderDiff += Wire.read();
@@ -299,9 +287,9 @@ uint8_t MarlinUI::read_slow_buttons() {
 }
 
 // Duration in ms, freq in Hz
-void MarlinUI::buzz(const long duration, const uint16_t freq/*=0*/) {
-  if (!panel_detected) return;
-  if (!sound_on) return;
+void MarlinUI::buzz(const long duration, const uint16_t freq) {
+  if (!PanelDetected) return;
+  if (!buzzer_enabled) return;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     WRITE(TFTGLCD_CS, LOW);
     SPI_SEND_ONE(BUZZER);
@@ -309,19 +297,20 @@ void MarlinUI::buzz(const long duration, const uint16_t freq/*=0*/) {
     SPI_SEND_TWO(freq);
     WRITE(TFTGLCD_CS, HIGH);
   #else
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
     Wire.write(BUZZER);
-    Wire.write(uint8_t(duration >> 8));
-    Wire.write(uint8_t(duration));
-    Wire.write(uint8_t(freq >> 8));
-    Wire.write(uint8_t(freq));
+    Wire.write((uint8_t)(duration >> 8));
+    Wire.write((uint8_t)duration);
+    Wire.write((uint8_t)(freq >> 8));
+    Wire.write((uint8_t)freq);
     Wire.endTransmission();
   #endif
 }
 
 void MarlinUI::init_lcd() {
+  uint8_t t;
   lcd.clear_buffer();
-  uint8_t t = 0;
+  t = 0;
   #if ENABLED(TFTGLCD_PANEL_SPI)
     // SPI speed must be less 10MHz
     SET_OUTPUT(TFTGLCD_CS);
@@ -334,71 +323,78 @@ void MarlinUI::init_lcd() {
     #ifdef TARGET_LPC1768
       Wire.begin();   //init twi/I2C
     #else
-      Wire.begin(uint8_t(LCD_I2C_ADDRESS)); //init twi/I2C
+      Wire.begin((uint8_t)LCD_I2C_ADDRESS); //init twi/I2C
     #endif
-    Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
-    Wire.write(uint8_t(GET_LCD_ROW)); // put command to buffer
+    Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
+    Wire.write((uint8_t)GET_LCD_ROW); // put command to buffer
     Wire.endTransmission(); // send buffer
     #ifdef __AVR__
-      Wire.requestFrom(uint8_t(LCD_I2C_ADDRESS), 1, 0, 0, 1);
+      Wire.requestFrom((uint8_t)LCD_I2C_ADDRESS, 1, 0, 0, 1);
     #elif ANY(STM32F1, STM32F4xx, TARGET_LPC1768)
       Wire.requestFrom(LCD_I2C_ADDRESS, 1);
     #endif
     t = (uint8_t)Wire.read();
   #endif
 
-  panel_detected = (t == LCD_HEIGHT);
-
-  if (panel_detected) {
+  if (t == LCD_HEIGHT) {
+    PanelDetected = 1;
     #if ENABLED(TFTGLCD_PANEL_SPI)
       SPI_SEND_ONE(INIT_SCREEN);
       SPI_SEND_ONE(Marlin);
       WRITE(TFTGLCD_CS, HIGH);
     #else
-      Wire.beginTransmission(uint8_t(LCD_I2C_ADDRESS));
-      Wire.write(uint8_t(INIT_SCREEN));
+      Wire.beginTransmission((uint8_t)LCD_I2C_ADDRESS);
+      Wire.write((uint8_t)INIT_SCREEN);
       Wire.write(Marlin);
       Wire.endTransmission();
     #endif
   }
+  else
+    PanelDetected = 0;
   safe_delay(100);
 }
 
-bool MarlinUI::detected() { return panel_detected; }
+bool MarlinUI::detected() {
+  return PanelDetected;
+}
 
 void MarlinUI::clear_lcd() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   lcd.clr_screen();
   lcd.clear_buffer();
 }
 
-void MarlinUI::clear_for_drawing() { clear_lcd(); }
+int16_t MarlinUI::contrast; // Initialized by settings.load()
 
-#if HAS_LCD_CONTRAST
-  void MarlinUI::_set_contrast() { lcd.setContrast(contrast); }
-#endif
+void MarlinUI::set_contrast(const int16_t value) {
+  contrast = constrain(value, LCD_CONTRAST_MIN, LCD_CONTRAST_MAX);
+  lcd.setContrast(contrast);
+}
 
-static void center_text(FSTR_P const fstart, const uint8_t y) {
-  const uint8_t len = utf8_strlen(fstart);
-  lcd_moveto(len < LCD_WIDTH ? (LCD_WIDTH - len) / 2 : 0, y);
-  lcd_put_u8str(fstart);
+static void center_text_P(PGM_P pstart, uint8_t y) {
+  uint8_t len = utf8_strlen_P(pstart);
+  if (len < LCD_WIDTH)
+    lcd.setCursor((LCD_WIDTH - len) / 2, y);
+  else
+    lcd.setCursor(0, y);
+  lcd_put_u8str_P(pstart);
 }
 
 #if ENABLED(SHOW_BOOTSCREEN)
 
   void MarlinUI::show_bootscreen() {
-    if (!panel_detected) return;
+    if (!PanelDetected) return;
     //
     // Show the Marlin logo, splash line1, and splash line 2
     //
     uint8_t indent = (LCD_WIDTH - 8) / 2;
     // symbols 217 (bottom right corner) and 218 (top left corner) are using for letters in some languages
-    // and they should be moved to beginning ASCII table as special symbols
-    lcd_moveto(indent, 0); lcd.write(TLC); lcd_put_u8str(F("------")); lcd.write(TRC);
-    lcd_moveto(indent, 1); lcd.write(LR);  lcd_put_u8str(F("Marlin")); lcd.write(LR);
-    lcd_moveto(indent, 2); lcd.write(BLC); lcd_put_u8str(F("------")); lcd.write(BRC);
-    center_text(F(SHORT_BUILD_VERSION), 3);
-    center_text(F(MARLIN_WEBSITE_URL), 4);
+    // and they should be moved to begining ASCII table as spetial symbols
+    lcd.setCursor(indent, 0); lcd.write(TLC); lcd_put_u8str_P(PSTR("------"));  lcd.write(TRC);
+    lcd.setCursor(indent, 1); lcd.write(LR);  lcd_put_u8str_P(PSTR("Marlin"));  lcd.write(LR);
+    lcd.setCursor(indent, 2); lcd.write(BLC); lcd_put_u8str_P(PSTR("------"));  lcd.write(BRC);
+    center_text_P(PSTR(SHORT_BUILD_VERSION), 3);
+    center_text_P(PSTR(MARLIN_WEBSITE_URL), 4);
     picBits = ICON_LOGO;
     lcd.print_screen();
   }
@@ -410,13 +406,13 @@ static void center_text(FSTR_P const fstart, const uint8_t y) {
 #endif // SHOW_BOOTSCREEN
 
 void MarlinUI::draw_kill_screen() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
   lcd.clear_buffer();
-  lcd_moveto(0, 3); lcd.write(COLOR_ERROR);
-  lcd_moveto((LCD_WIDTH - status_message.glyphs()) / 2 + 1, 3);
+  lcd.setCursor(0, 3);  lcd.write(COLOR_ERROR);
+  lcd.setCursor((LCD_WIDTH - utf8_strlen(status_message)) / 2 + 1, 3);
   lcd_put_u8str(status_message);
-  center_text(GET_TEXT_F(MSG_HALTED), 5);
-  center_text(GET_TEXT_F(MSG_PLEASE_RESET), 6);
+  center_text_P(GET_TEXT(MSG_HALTED), 5);
+  center_text_P(GET_TEXT(MSG_PLEASE_RESET), 6);
   lcd.print_screen();
 }
 
@@ -432,247 +428,123 @@ FORCE_INLINE void _draw_axis_value(const AxisEnum axis, const char *value, const
   else if (axis_should_home(axis))
     while (const char c = *value++) lcd.write(c <= '.' ? c : '?');
   else if (NONE(HOME_AFTER_DEACTIVATE, DISABLE_REDUCED_ACCURACY_WARNING) && !axis_is_trusted(axis))
-    lcd_put_u8str(axis == Z_AXIS ? F("       ") : F("    "));
+    lcd_put_u8str_P(axis == Z_AXIS ? PSTR("       ") : PSTR("    "));
   else
     lcd_put_u8str(value);
 }
 
-#if HAS_HOTEND || HAS_HEATED_BED
+FORCE_INLINE void _draw_heater_status(const heater_id_t heater_id, const char *prefix, const bool blink) {
+  uint8_t pic_hot_bits;
+  #if HAS_HEATED_BED
+    const bool isBed = heater_id < 0;
+    const celsius_t t1 = (isBed ? thermalManager.wholeDegBed() : thermalManager.wholeDegHotend(heater_id)),
+                    t2 = (isBed ? thermalManager.degTargetBed() : thermalManager.degTargetHotend(heater_id));
+  #else
+    const celsius_t t1 = thermalManager.wholeDegHotend(heater_id), t2 = thermalManager.degTargetHotend(heater_id);
+  #endif
 
-  FORCE_INLINE void _draw_heater_status(const heater_id_t heater_id, const char *prefix, const bool blink) {
-    uint8_t pic_hot_bits;
-    #if HAS_HEATED_BED
-      const bool isBed = heater_id < 0;
-      const celsius_t t1 = (isBed ? thermalManager.wholeDegBed() : thermalManager.wholeDegHotend(heater_id)),
-                      t2 = (isBed ? thermalManager.degTargetBed() : thermalManager.degTargetHotend(heater_id));
-    #else
-      const celsius_t t1 = thermalManager.wholeDegHotend(heater_id), t2 = thermalManager.degTargetHotend(heater_id);
-    #endif
-
-    #if HOTENDS < 2
-      if (heater_id == H_E0) {
-        lcd_moveto(2, 5); lcd.print(prefix); //HE
-        lcd_moveto(1, 6); lcd.print(i16tostr3rj(t1));
-        lcd_moveto(1, 7);
-      }
-      else {
-        lcd_moveto(6, 5); lcd.print(prefix); //BED
-        lcd_moveto(6, 6); lcd.print(i16tostr3rj(t1));
-        lcd_moveto(6, 7);
-      }
-    #else
-      if (heater_id > H_BED) {
-        lcd_moveto(heater_id * 4, 5); lcd.print(prefix); // HE1 or HE2 or HE3
-        lcd_moveto(heater_id * 4, 6); lcd.print(i16tostr3rj(t1));
-        lcd_moveto(heater_id * 4, 7);
-      }
-      else {
-        lcd_moveto(13, 5); lcd.print(prefix); //BED
-        lcd_moveto(13, 6); lcd.print(i16tostr3rj(t1));
-        lcd_moveto(13, 7);
-      }
-    #endif // HOTENDS <= 1
-
-    #if !HEATER_IDLE_HANDLER
-      UNUSED(blink);
-    #else
-      if (!blink && thermalManager.heater_idle[thermalManager.idle_index_for_id(heater_id)].timed_out) {
-        lcd.write(' ');
-        if (t2 >= 10) lcd.write(' ');
-        if (t2 >= 100) lcd.write(' ');
-      }
-      else
-    #endif // !HEATER_IDLE_HANDLER
-        lcd.print(i16tostr3rj(t2));
-
-    switch (heater_id) {
-      case H_BED: pic_hot_bits = ICON_BED;   break;
-      case H_E0:  pic_hot_bits = ICON_TEMP1; break;
-      case H_E1:  pic_hot_bits = ICON_TEMP2; break;
-      case H_E2:  pic_hot_bits = ICON_TEMP3;
-      default:    break;
-    }
-
-    if (t2) picBits |= pic_hot_bits;
-    else    picBits &= ~pic_hot_bits;
-
-    if (t1 > 50)  hotBits |= pic_hot_bits;
-    else          hotBits &= ~pic_hot_bits;
-
-    if (hotBits)  picBits |= ICON_HOT;
-    else          picBits &= ~ICON_HOT;
-  }
-
-#endif // HAS_HOTEND || HAS_HEATED_BED
-
-#if HAS_COOLER
-
-  FORCE_INLINE void _draw_cooler_status(const bool blink) {
-    const celsius_t t2 = thermalManager.degTargetCooler();
-
-    lcd_moveto(0, 5); lcd_put_u8str(F("COOL"));
-    lcd_moveto(1, 6); lcd_put_u8str(i16tostr3rj(thermalManager.wholeDegCooler()));
-    lcd_moveto(1, 7);
-
-    #if !HEATER_IDLE_HANDLER
-      UNUSED(blink);
-    #else
-      if (!blink && thermalManager.heater_idle[thermalManager.idle_index_for_id(heater_id)].timed_out)
-        lcd_put_u8str(F("   "));
-      else
-    #endif
-        lcd_put_u8str(i16tostr3left(t2));
-
-    lcd_put_u8str(F(" "));
-    if (t2 < 10) lcd_put_u8str(F(" "));
-
-    if (t2) picBits |= ICON_TEMP1;
-    else    picBits &= ~ICON_TEMP1;
-  }
-
-#endif // HAS_COOLER
-
-#if ENABLED(LASER_COOLANT_FLOW_METER)
-
-  FORCE_INLINE void _draw_flowmeter_status() {
-    lcd_moveto(5, 5); lcd_put_u8str(F("FLOW"));
-    lcd_moveto(7, 6); lcd_put_u8str(F("L"));
-    lcd_moveto(6, 7); lcd_put_u8str(ftostr11ns(cooler.flowrate));
-
-    if (cooler.flowrate)  picBits |= ICON_FAN;
-    else                  picBits &= ~ICON_FAN;
-  }
-
-#endif
-
-#if ENABLED(I2C_AMMETER)
-
-  FORCE_INLINE void _draw_ammeter_status() {
-    lcd_moveto(10, 5); lcd_put_u8str(F("ILAZ"));
-    ammeter.read();
-    lcd_moveto(11, 6);
-    if (ammeter.current <= 0.999f)
-    {
-      lcd_put_u8str("mA");
-      lcd_moveto(10, 7);
-      lcd_put_u8str(F(" ")); lcd_put_u8str(ui16tostr3rj(uint16_t(ammeter.current * 1000 + 0.5f)));
+  #if HOTENDS < 2
+    if (heater_id == H_E0) {
+      lcd.setCursor(2, 5);  lcd.print(prefix); //HE
+      lcd.setCursor(1, 6);  lcd.print(i16tostr3rj(t1));
+      lcd.setCursor(1, 7);
     }
     else {
-      lcd_put_u8str(" A");
-      lcd_moveto(10, 7);
-      lcd_put_u8str(ftostr12ns(ammeter.current));
+      lcd.setCursor(6, 5);  lcd.print(prefix); //BED
+      lcd.setCursor(6, 6);  lcd.print(i16tostr3rj(t1));
+      lcd.setCursor(6, 7);
     }
+  #else
+    if (heater_id > H_BED) {
+      lcd.setCursor(heater_id * 4, 5);  lcd.print(prefix); // HE1 or HE2 or HE3
+      lcd.setCursor(heater_id * 4, 6);  lcd.print(i16tostr3rj(t1));
+      lcd.setCursor(heater_id * 4, 7);
+    }
+    else {
+      lcd.setCursor(13, 5);  lcd.print(prefix); //BED
+      lcd.setCursor(13, 6);  lcd.print(i16tostr3rj(t1));
+      lcd.setCursor(13, 7);
+    }
+  #endif // HOTENDS <= 1
 
-    if (ammeter.current)  picBits |= ICON_BED;
-    else                  picBits &= ~ICON_BED;
+  #if !HEATER_IDLE_HANDLER
+    UNUSED(blink);
+  #else
+    if (!blink && thermalManager.heater_idle[thermalManager.idle_index_for_id(heater_id)].timed_out) {
+      lcd.write(' ');
+      if (t2 >= 10) lcd.write(' ');
+      if (t2 >= 100) lcd.write(' ');
+    }
+    else
+  #endif // !HEATER_IDLE_HANDLER
+      lcd.print(i16tostr3rj(t2));
+
+  switch (heater_id) {
+    case H_BED: pic_hot_bits = ICON_BED;   break;
+    case H_E0:  pic_hot_bits = ICON_TEMP1; break;
+    case H_E1:  pic_hot_bits = ICON_TEMP2; break;
+    case H_E2:  pic_hot_bits = ICON_TEMP3;
+    default:    break;
   }
 
-#endif // I2C_AMMETER
+  if (t2) picBits |= pic_hot_bits;
+  else    picBits &= ~pic_hot_bits;
 
-#if HAS_CUTTER
+  if (t1 > 50)  hotBits |= pic_hot_bits;
+  else          hotBits &= ~pic_hot_bits;
 
-  FORCE_INLINE void _draw_cutter_status() {
-    lcd_moveto(15, 5);  lcd_put_u8str(F("CUTT"));
-    #if CUTTER_UNIT_IS(RPM)
-      lcd_moveto(16, 6);  lcd_put_u8str(F("RPM"));
-      lcd_moveto(15, 7);  lcd_put_u8str(ftostr31ns(float(cutter.unitPower) / 1000));
-      lcd_put_u8str(F("K"));
-    #elif CUTTER_UNIT_IS(PERCENT)
-      lcd_moveto(17, 6);  lcd_put_u8str(F("%"));
-      lcd_moveto(18, 7);  lcd_put_u8str(cutter_power2str(cutter.unitPower));
-    #else
-      lcd_moveto(17, 7);  lcd_put_u8str(cutter_power2str(cutter.unitPower));
+  if (hotBits)  picBits |= ICON_HOT;
+  else          picBits &= ~ICON_HOT;
+}
+
+#if HAS_PRINT_PROGRESS
+
+  FORCE_INLINE void _draw_print_progress() {
+    if (!PanelDetected) return;
+    const uint8_t progress = ui._get_progress();
+    #if ENABLED(SDSUPPORT)
+      lcd_put_u8str_P(PSTR("SD"));
+    #elif ENABLED(LCD_SET_PROGRESS_MANUALLY)
+      lcd_put_u8str_P(PSTR("P:"));
     #endif
-
-    if (cutter.unitPower) picBits |= ICON_HOT;
-    else                  picBits &= ~ICON_HOT;
+    if (progress)
+      lcd.print(ui8tostr3rj(progress));
+    else
+      lcd_put_u8str_P(PSTR("---"));
+    lcd.write('%');
   }
-
-#endif // HAS_CUTTER
-
-#if HAS_PRINT_PROGRESS   // UNTESTED!!!
-
-  #define TPOFFSET (LCD_WIDTH - 1)
-
-  #if ENABLED(SHOW_PROGRESS_PERCENT)
-    void MarlinUI::drawPercent() {
-      const uint8_t progress = ui.get_progress_percent();
-      if (progress) {
-        lcd_moveto(0, 2);
-        lcd_put_u8str(card.isStillPrinting() ? F("SD") : F("P:"));
-        lcd.print(TERN(PRINT_PROGRESS_SHOW_DECIMALS, permyriadtostr4(ui.get_progress_permyriad()), ui8tostr3rj(progress)));
-        lcd.write('%');
-      }
-    }
-  #endif
-  #if ENABLED(SHOW_REMAINING_TIME)
-    void MarlinUI::drawRemain() {
-      if (marlin.printJobOngoing()) {
-        const duration_t remaint = ui.get_remaining_time();
-        char buffer[10];
-        const uint8_t timepos = TPOFFSET - remaint.toDigital(buffer);
-        lcd_moveto(timepos, 1);
-        lcd.write('R');
-        lcd.print(buffer);
-      }
-    }
-  #endif
-  #if ENABLED(SHOW_INTERACTION_TIME)
-    void MarlinUI::drawInter() {
-      const duration_t interactt = ui.interaction_time;
-      if (marlin.printingIsActive() && interactt.value) {
-        char buffer[10];
-        const uint8_t timepos = TPOFFSET - interactt.toDigital(buffer);
-        lcd_moveto(timepos, 1);
-        lcd.write('C');
-        lcd.print(buffer);
-      }
-    }
-  #endif
-  #if ENABLED(SHOW_ELAPSED_TIME)
-    void MarlinUI::drawElapsed() {
-      if (marlin.printJobOngoing()) {
-        const duration_t elapsedt = print_job_timer.duration();
-        char buffer[10];
-        const uint8_t timepos = TPOFFSET - elapsedt.toDigital(buffer);
-        lcd_moveto(timepos, 1);
-        lcd.write('E');
-        lcd.print(buffer);
-      }
-    }
-  #endif
 
 #endif // HAS_PRINT_PROGRESS
 
 #if ENABLED(LCD_PROGRESS_BAR)
 
   void MarlinUI::draw_progress_bar(const uint8_t percent) {
-    if (!panel_detected) return;
+    if (!PanelDetected) return;
     if (fb == &framebuffer[0] + LCD_WIDTH * 2) {  // For status screen
       lcd.write('%'); lcd.write(percent);
     }
     else { // For progress bar test
-      lcd_moveto(LCD_WIDTH / 2 - 2, MIDDLE_Y);
-      lcd.print(i16tostr3rj(percent)); lcd.write('%');
+      lcd.setCursor(LCD_WIDTH / 2 - 2, MIDDLE_Y);
+      lcd.print(i16tostr3rj(percent));  lcd.write('%');
       lcd.print_line();
-      lcd_moveto(0, MIDDLE_Y + 1);
+      lcd.setCursor(0, MIDDLE_Y + 1);
       lcd.write('%'); lcd.write(percent);
       lcd.print_line();
     }
   }
 
-#endif // LCD_PROGRESS_BAR
+#endif
 
 void MarlinUI::draw_status_message(const bool blink) {
-  if (!panel_detected) return;
-  lcd_moveto(0, 3);
-  #if ALL(FILAMENT_LCD_DISPLAY, HAS_MEDIA)
+  if (!PanelDetected) return;
+  lcd.setCursor(0, 3);
+  #if BOTH(FILAMENT_LCD_DISPLAY, SDSUPPORT)
 
     // Alternate Status message and Filament display
     if (ELAPSED(millis(), next_filament_display)) {
-      lcd_put_u8str(F("Dia "));
+      lcd_put_u8str_P(PSTR("Dia "));
       lcd.print(ftostr12ns(filament_width_meas));
-      lcd_put_u8str(F(" V"));
+      lcd_put_u8str_P(PSTR(" V"));
       lcd.print(i16tostr3rj(100.0 * (
           parser.volumetric_enabled
             ? planner.volumetric_area_nominal / planner.volumetric_multiplier[FILAMENT_SENSOR_EXTRUDER_NUM]
@@ -683,10 +555,10 @@ void MarlinUI::draw_status_message(const bool blink) {
       return;
     }
 
-  #endif // FILAMENT_LCD_DISPLAY && HAS_MEDIA
+  #endif // FILAMENT_LCD_DISPLAY && SDSUPPORT
 
   // Get the UTF8 character count of the string
-  uint8_t slen = status_message.glyphs();
+  uint8_t slen = utf8_strlen(status_message);
 
   #if ENABLED(STATUS_MESSAGE_SCROLLING)
 
@@ -757,7 +629,7 @@ Equal to 20x10 text LCD
 |                    |
 |  HE  BED  FAN      |
 | ttc  ttc   %       | ttc - current temperature
-| tts  tts  %%%      | tts - set temperature, %%% - percent for FAN
+| tts  tts  %%%      | tts - setted temperature, %%% - percent for FAN
 | ICO  ICO  ICO  ICO | ICO - icon 48x48, placed in 2 text lines
 | ICO  ICO  ICO  ICO | ICO
 
@@ -776,19 +648,6 @@ or
 
 or
 
-|X 000 Y 000 Z 000.00|
-|FR100% SD100% C--:--|
-| Progress bar line  |
-|Status message      |
-|                    |
-|COOL FLOW ILAZ CUTT |
-| ttc   L   mA   RPM |
-| tts  f.f  aaa rr.rK|
-| ICO  ICO  ICO  ICO |
-| ICO  ICO  ICO  ICO |
-
-or
-
 Equal to 24x10 text LCD
 
 |X 000 Y 000 Z 000.00    |
@@ -804,7 +663,7 @@ Equal to 24x10 text LCD
 */
 
 void MarlinUI::draw_status_screen() {
-  if (!panel_detected) return;
+  if (!PanelDetected) return;
 
   const bool blink = get_blink();
 
@@ -814,35 +673,39 @@ void MarlinUI::draw_status_screen() {
   // Line 1 - XYZ coordinates
   //
 
-  #if NUM_AXES
-    lcd_moveto(0, 0);
-    const xyz_pos_t lpos = current_position.asLogical();
-    _draw_axis_value(X_AXIS, ftostr4sign(lpos.x), blink);
-    #if HAS_Y_AXIS
-      lcd.write(' '); _draw_axis_value(Y_AXIS, ftostr4sign(lpos.y), blink);
-    #endif
-    #if HAS_Z_AXIS
-      lcd.write(' '); _draw_axis_value(Z_AXIS, ftostr52sp(lpos.z), blink);
-    #endif
-  #endif
+  lcd.setCursor(0, 0);
+  _draw_axis_value(X_AXIS, ftostr4sign(LOGICAL_X_POSITION(current_position.x)), blink); lcd.write(' ');
+  _draw_axis_value(Y_AXIS, ftostr4sign(LOGICAL_Y_POSITION(current_position.y)), blink); lcd.write(' ');
+  _draw_axis_value(Z_AXIS, ftostr52sp(LOGICAL_Z_POSITION(current_position.z)), blink);
 
   #if HAS_LEVELING && !HAS_HEATED_BED
     lcd.write(planner.leveling_active || blink ? '_' : ' ');
   #endif
 
   //
-  // Line 2 - feedrate, progress %, progress time
+  // Line 2 - feedrate, , time
   //
 
-  lcd_moveto(0, 1);
-  lcd_put_u8str(F("FR")); lcd.print(i16tostr3rj(feedrate_percentage)); lcd.write('%');
-  ui.rotate_progress();   // UNTESTED!!!
+  lcd.setCursor(0, 1);
+  lcd_put_u8str_P(PSTR("FR")); lcd.print(i16tostr3rj(feedrate_percentage)); lcd.write('%');
+
+  #if BOTH(SDSUPPORT, HAS_PRINT_PROGRESS)
+    lcd.setCursor(LCD_WIDTH / 2 - 3, 1);
+    _draw_print_progress();
+  #endif
+
+  char buffer[10];
+  duration_t elapsed = print_job_timer.duration();
+  uint8_t len = elapsed.toDigital(buffer);
+
+  lcd.setCursor((LCD_WIDTH - 1) - len, 1);
+  lcd.write(LCD_STR_CLOCK[0]); lcd.print(buffer);
 
   //
   // Line 3 - progressbar
   //
 
-  lcd_moveto(0, 2);
+  lcd.setCursor(0, 2);
   #if ENABLED(LCD_PROGRESS_BAR)
     draw_progress_bar(_get_progress());
   #else
@@ -860,83 +723,72 @@ void MarlinUI::draw_status_screen() {
   //
 
   #if HOTENDS <= 1 || (HOTENDS <= 2 && !HAS_HEATED_BED)
-    #if HAS_DUAL_MIXING
-      lcd_moveto(0, 4);
+    #if DUAL_MIXING_EXTRUDER
+      lcd.setCursor(0, 4);
       // Two-component mix / gradient instead of XY
-      char mixer_messages[15];
-      PGM_P mix_label;
+      char mixer_messages[12];
+      const char *mix_label;
       #if ENABLED(GRADIENT_MIX)
         if (mixer.gradient.enabled) {
           mixer.update_mix_from_gradient();
-          mix_label = PSTR("Gr");
+          mix_label = "Gr";
         }
         else
       #endif
         {
           mixer.update_mix_from_vtool();
-          mix_label = PSTR("Mx");
+          mix_label = "Mx";
         }
-      sprintf_P(mixer_messages, PSTR(S_FMT " %d;%d%% "), mix_label, int(mixer.mix[0]), int(mixer.mix[1]));
+      sprintf_P(mixer_messages, PSTR("%s %d;%d%% "), mix_label, int(mixer.mix[0]), int(mixer.mix[1]));
       lcd_put_u8str(mixer_messages);
     #endif
   #endif
 
   //
-  // Line 6..8 Temperatures, FAN for printer or Cooler, Flowmetter, Ampermeter, Cutter for laser/spindle
+  // Line 6..8 Temperatures, FAN
   //
 
-  #if HAS_HOTEND
+  #if HOTENDS < 2
+    _draw_heater_status(H_E0, "HE", blink);    // Hotend Temperature
+  #else
+    _draw_heater_status(H_E0, "HE1", blink);   // Hotend 1 Temperature
+    _draw_heater_status(H_E1, "HE2", blink);   // Hotend 2 Temperature
+    #if HOTENDS > 2
+      _draw_heater_status(H_E2, "HE3", blink); // Hotend 3 Temperature
+    #endif
+  #endif
+
+  #if HAS_HEATED_BED
+    #if HAS_LEVELING
+      _draw_heater_status(H_BED, (planner.leveling_active && blink ? "___" : "BED"), blink);
+    #else
+      _draw_heater_status(H_BED, "BED", blink);
+    #endif
+  #endif
+
+  #if HAS_FAN
+    uint16_t spd = thermalManager.fan_speed[0];
+    #if ENABLED(ADAPTIVE_FAN_SLOWING)
+      if (!blink) spd = thermalManager.scaledFanSpeed(0, spd);
+    #endif
+    uint16_t per = thermalManager.pwmToPercent(spd);
 
     #if HOTENDS < 2
-      _draw_heater_status(H_E0, "HE", blink);    // Hotend Temperature
+      #define FANX 11
     #else
-      _draw_heater_status(H_E0, "HE1", blink);   // Hotend 1 Temperature
-      _draw_heater_status(H_E1, "HE2", blink);   // Hotend 2 Temperature
-      #if HOTENDS > 2
-        _draw_heater_status(H_E2, "HE3", blink); // Hotend 3 Temperature
-      #endif
+      #define FANX 17
     #endif
+    lcd.setCursor(FANX, 5); lcd_put_u8str_P(PSTR("FAN"));
+    lcd.setCursor(FANX + 1, 6); lcd.write('%');
+    lcd.setCursor(FANX, 7);
+    lcd.print(i16tostr3rj(per));
 
-    #if HAS_HEATED_BED
-      #if HAS_LEVELING
-        _draw_heater_status(H_BED, (planner.leveling_active && blink ? "___" : "BED"), blink);
-      #else
-        _draw_heater_status(H_BED, "BED", blink);
-      #endif
-    #endif
+    if (TERN0(HAS_FAN0, thermalManager.fan_speed[0]) || TERN0(HAS_FAN1, thermalManager.fan_speed[1]) || TERN0(HAS_FAN2, thermalManager.fan_speed[2]))
+      picBits |= ICON_FAN;
+    else
+      picBits &= ~ICON_FAN;
 
-    #if HAS_FAN
-      uint16_t spd = thermalManager.fan_speed[0];
-      #if ENABLED(ADAPTIVE_FAN_SLOWING)
-        if (!blink) spd = thermalManager.scaledFanSpeed(0, spd);
-      #endif
-      uint16_t per = thermalManager.pwmToPercent(spd);
-
-      #if HOTENDS < 2
-        #define FANX 11
-      #else
-        #define FANX 17
-      #endif
-      lcd_moveto(FANX, 5); lcd_put_u8str(F("FAN"));
-      lcd_moveto(FANX + 1, 6); lcd.write('%');
-      lcd_moveto(FANX, 7);
-      lcd.print(i16tostr3rj(per));
-
-      if (TERN0(HAS_FAN0, thermalManager.fan_speed[0]) || TERN0(HAS_FAN1, thermalManager.fan_speed[1]) || TERN0(HAS_FAN2, thermalManager.fan_speed[2]))
-        picBits |= ICON_FAN;
-      else
-        picBits &= ~ICON_FAN;
-
-    #endif // HAS_FAN
-
-  #else
-
-    TERN_(HAS_COOLER, _draw_cooler_status(blink));
-    TERN_(LASER_COOLANT_FLOW_METER, _draw_flowmeter_status());
-    TERN_(I2C_AMMETER, _draw_ammeter_status());
-    TERN_(HAS_CUTTER, _draw_cutter_status());
-
-  #endif
+  #endif // HAS_FAN
 
   //
   // Line 9, 10 - icons
@@ -944,16 +796,16 @@ void MarlinUI::draw_status_screen() {
   lcd.print_screen();
 }
 
-#if HAS_MARLINUI_MENU
+#if HAS_LCD_MENU
 
   #include "../menu/menu.h"
 
   #if ENABLED(ADVANCED_PAUSE_FEATURE)
 
     void MarlinUI::draw_hotend_status(const uint8_t row, const uint8_t extruder) {
-      if (!panel_detected) return;
-      lcd_moveto((LCD_WIDTH - 14) / 2, row + 1);
-      lcd.write(LCD_STR_THERMOMETER[0]); lcd_put_u8str(F(" E")); lcd.write('1' + extruder); lcd.write(' ');
+      if (!PanelDetected) return;
+      lcd.setCursor((LCD_WIDTH - 14) / 2, row + 1);
+      lcd.write(LCD_STR_THERMOMETER[0]); lcd_put_u8str_P(PSTR(" E")); lcd.write('1' + extruder); lcd.write(' ');
       lcd.print(i16tostr3rj(thermalManager.wholeDegHotend(extruder))); lcd.write(LCD_STR_DEGREE[0]); lcd.write('/');
       lcd.print(i16tostr3rj(thermalManager.degTargetHotend(extruder))); lcd.write(LCD_STR_DEGREE[0]);
       lcd.print_line();
@@ -962,93 +814,58 @@ void MarlinUI::draw_status_screen() {
   #endif
 
   // Draw a static item with no left-right margin required. Centered by default.
-  void MenuItem_static::draw(const uint8_t row, FSTR_P const ftpl, const uint8_t style/*=SS_DEFAULT*/, const char *vstr/*=nullptr*/) {
-    if (!panel_detected) return;
-    lcd_moveto(0, row);
-
+  void MenuItem_static::draw(const uint8_t row, PGM_P const pstr, const uint8_t style/*=SS_DEFAULT*/, const char * const valstr/*=nullptr*/) {
+    if (!PanelDetected) return;
     uint8_t n = LCD_WIDTH;
-    const bool center = bool(style & SS_CENTER), full = bool(style & SS_FULL);
-
-    // Value length, if any
-    int8_t vlen = vstr ? utf8_strlen(vstr) : 0;
-
-    char estr[utf8_strlen(ftpl) + 3] = "\0";
-    int8_t llen = ftpl ? expand_u8str(estr, ftpl, itemIndex, itemStringC, itemStringF, n - vlen) : 0;
-
-    bool mv_colon = false;
-    if (vlen && !center) {
-      // Move the leading colon from the value to the label below
-      mv_colon = (*vstr == ':');
-      // Shorter value, wider label
-      if (mv_colon) { vstr++; vlen--; llen++; }
-      // Remove leading spaces from the value and shorten
-      while (*vstr == ' ') { vstr++; vlen--; }
+    lcd.setCursor(0, row);
+    if ((style & SS_CENTER) && !valstr) {
+      int8_t pad = (LCD_WIDTH - utf8_strlen_P(pstr)) / 2;
+      while (--pad >= 0) { lcd.write(' '); n--; }
     }
-
-    int8_t pad = (center || full) ? n - llen - vlen : 0;
-
-    // SS_CENTER: Pad with half of the unused space first
-    if (center) for (int8_t lpad = pad / 2; lpad > 0; --lpad) { lcd.write(' '); n--; }
-
-    // Draw as much of the label as fits
-    if (llen) n -= lcd_put_u8str_max(estr, n - vlen);
-
-    if (vlen && n > 0) {
-      // SS_FULL: Pad with enough space to justify the value
-      if (full && !center) {
-        // Move the leading colon from the value to the label
-        if (mv_colon) { lcd.write(':'); n--; }
-        // Pad in-between
-        for (; pad > 0; --pad) { lcd.write(' '); n--; }
-      }
-      n -= lcd_put_u8str_max(vstr, n);
-    }
-
-    for (; n > 0; --n) lcd.write(' ');
-
+    n = lcd_put_u8str_ind_P(pstr, itemIndex, itemString, n);
+    if (valstr) n -= lcd_put_u8str_max(valstr, n);
+    for (; n; --n) lcd.write(' ');
     lcd.print_line();
   }
 
   // Draw a generic menu item with pre_char (if selected) and post_char
-  void MenuItemBase::_draw(const bool sel, const uint8_t row, FSTR_P const ftpl, const char pre_char, const char post_char) {
-    if (!panel_detected) return;
-    lcd_moveto(0, row);
+  void MenuItemBase::_draw(const bool sel, const uint8_t row, PGM_P const pstr, const char pre_char, const char post_char) {
+    if (!PanelDetected) return;
+    lcd.setCursor(0, row);
     lcd.write(sel ? pre_char : ' ');
-    uint8_t n = LCD_WIDTH - 2;
-    n -= lcd_put_u8str(ftpl, itemIndex, itemStringC, itemStringF, n);
+    uint8_t n = lcd_put_u8str_ind_P(pstr, itemIndex, itemString, LCD_WIDTH - 2);
     for (; n; --n) lcd.write(' ');
     lcd.write(post_char);
     lcd.print_line();
   }
 
   // Draw a menu item with a (potentially) editable value
-  void MenuEditItemBase::draw(const bool sel, const uint8_t row, FSTR_P const ftpl, const char * const inStr, const bool pgm) {
-    if (!panel_detected) return;
-    const uint8_t vlen = inStr ? (pgm ? utf8_strlen_P(inStr) : utf8_strlen(inStr)) : 0;
-    lcd_moveto(0, row);
+  void MenuEditItemBase::draw(const bool sel, const uint8_t row, PGM_P const pstr, const char * const data, const bool pgm) {
+    if (!PanelDetected) return;
+    const uint8_t vlen = data ? (pgm ? utf8_strlen_P(data) : utf8_strlen(data)) : 0;
+    lcd.setCursor(0, row);
     lcd.write(sel ? LCD_STR_ARROW_RIGHT[0] : ' ');
-    uint8_t n = LCD_WIDTH - 2 - vlen;
-    n -= lcd_put_u8str(ftpl, itemIndex, itemStringC, itemStringF, n);
+    uint8_t n = lcd_put_u8str_ind_P(pstr, itemIndex, itemString, LCD_WIDTH - 2 - vlen);
     if (vlen) {
       lcd.write(':');
       for (; n; --n) lcd.write(' ');
-      if (pgm) lcd_put_u8str_P(inStr); else lcd_put_u8str(inStr);
+      if (pgm) lcd_put_u8str_P(data); else lcd_put_u8str(data);
     }
     lcd.print_line();
   }
 
   // Low-level draw_edit_screen can be used to draw an edit screen from anyplace
   // This line moves to the last line of the screen for UBL plot screen on the panel side
-  void MenuEditItemBase::draw_edit_screen(FSTR_P const fstr, const char * const value/*=nullptr*/) {
-    if (!panel_detected) return;
+  void MenuEditItemBase::draw_edit_screen(PGM_P const pstr, const char * const value/*=nullptr*/) {
+    if (!PanelDetected) return;
     ui.encoder_direction_normal();
     const uint8_t y = TERN0(AUTO_BED_LEVELING_UBL, ui.external_control) ? LCD_HEIGHT - 1 : MIDDLE_Y;
-    lcd_moveto(0, y);
+    lcd.setCursor(0, y);
     lcd.write(COLOR_EDIT);
-    lcd_put_u8str(fstr);
+    lcd_put_u8str_P(pstr);
     if (value) {
       lcd.write(':');
-      lcd_moveto((LCD_WIDTH - 1) - (utf8_strlen(value) + 1), y); // Right-justified, padded by spaces
+      lcd.setCursor((LCD_WIDTH - 1) - (utf8_strlen(value) + 1), y); // Right-justified, padded by spaces
       lcd.write(' ');                                               // Overwrite char if value gets shorter
       lcd.print(value);
       lcd.write(' ');
@@ -1057,35 +874,31 @@ void MarlinUI::draw_status_screen() {
   }
 
   // The Select Screen presents a prompt and two "buttons"
-  void MenuItem_confirm::draw_select_screen(FSTR_P const yes, FSTR_P const no, const bool yesno, FSTR_P const fpre, const char * const string, FSTR_P const fsuf) {
-    if (!panel_detected) return;
-    ui.draw_select_screen_prompt(fpre, string, fsuf);
+  void MenuItem_confirm::draw_select_screen(PGM_P const yes, PGM_P const no, const bool yesno, PGM_P const pref, const char * const string, PGM_P const suff) {
+    if (!PanelDetected) return;
+    ui.draw_select_screen_prompt(pref, string, suff);
+    lcd.setCursor(0, MIDDLE_Y);
     lcd.write(COLOR_EDIT);
-    if (no) {
-      lcd_moveto(0, MIDDLE_Y);
-      lcd.write(yesno ? ' ' : '['); lcd_put_u8str(no); lcd.write(yesno ? ' ' : ']');
-    }
-    if (yes) {
-      lcd_moveto(LCD_WIDTH - utf8_strlen(yes) - 3, MIDDLE_Y);
-      lcd.write(yesno ? '[' : ' '); lcd_put_u8str(yes); lcd.write(yesno ? ']' : ' ');
-    }
+    lcd.write(yesno ? ' ' : '['); lcd_put_u8str_P(no); lcd.write(yesno ? ' ' : ']');
+    lcd.setCursor(LCD_WIDTH - utf8_strlen_P(yes) - 3, MIDDLE_Y);
+    lcd.write(yesno ? '[' : ' '); lcd_put_u8str_P(yes); lcd.write(yesno ? ']' : ' ');
     lcd.print_line();
   }
 
-  #if HAS_MEDIA
+  #if ENABLED(SDSUPPORT)
 
-    void MenuItem_sdbase::draw(const bool sel, const uint8_t row, FSTR_P const, CardReader &theCard, const bool isDir) {
-      if (!panel_detected) return;
-      lcd_moveto(0, row);
+    void MenuItem_sdbase::draw(const bool sel, const uint8_t row, PGM_P const, CardReader &theCard, const bool isDir) {
+      if (!PanelDetected) return;
+      lcd.setCursor(0, row);
       lcd.write(sel ? LCD_STR_ARROW_RIGHT[0] : ' ');
-      uint8_t n = LCD_WIDTH - 2;
-      n -= lcd_put_u8str_max(ui.scrolled_filename(theCard, n, sel), n);
+      constexpr uint8_t maxlen = LCD_WIDTH - 2;
+      uint8_t n = maxlen - lcd_put_u8str_max(ui.scrolled_filename(theCard, maxlen, row, sel), maxlen);
       for (; n; --n) lcd.write(' ');
       lcd.write(isDir ? LCD_STR_FOLDER[0] : ' ');
       lcd.print_line();
     }
 
-  #endif // HAS_MEDIA
+  #endif // SDSUPPORT
 
   #if ENABLED(LCD_HAS_STATUS_INDICATORS)
 
@@ -1108,43 +921,43 @@ void MarlinUI::draw_status_screen() {
      * |____________________|
      */
     void MarlinUI::ubl_plot(const uint8_t x_plot, const uint8_t y_plot) {
-      if (!panel_detected) return;
+      if (!PanelDetected) return;
 
       #define _LCD_W_POS 12
 
       lcd.clear_buffer();
 
       //print only top left corner. All frame with grid points will be printed by panel
-      lcd_moveto(0, 0);
+      lcd.setCursor(0, 0);
       *fb++ = TLC;   //top left corner - marker for plot parameters
       *fb = (GRID_MAX_POINTS_X << 4) + GRID_MAX_POINTS_Y; //set mesh size
 
       // Print plot position
-      lcd_moveto(_LCD_W_POS, 0);
-      *fb++ = '('; lcd.print(i16tostr3left(x_plot));
-      *fb++ = ','; lcd.print(i16tostr3left(y_plot)); *fb = ')';
+      lcd.setCursor(_LCD_W_POS, 0);
+      *fb++ = '(';  lcd.print(i16tostr3left(x_plot));
+      *fb++ = ',';  lcd.print(i16tostr3left(y_plot)); *fb = ')';
 
       // Show all values
-      lcd_moveto(_LCD_W_POS, 1); lcd_put_u8str(F("X:"));
-      lcd.print(ftostr52(LOGICAL_X_POSITION(pgm_read_float(&bedlevel._mesh_index_to_xpos[x_plot]))));
-      lcd_moveto(_LCD_W_POS, 2); lcd_put_u8str(F("Y:"));
-      lcd.print(ftostr52(LOGICAL_Y_POSITION(pgm_read_float(&bedlevel._mesh_index_to_ypos[y_plot]))));
+      lcd.setCursor(_LCD_W_POS, 1); lcd_put_u8str_P(PSTR("X:"));
+      lcd.print(ftostr52(LOGICAL_X_POSITION(pgm_read_float(&ubl._mesh_index_to_xpos[x_plot]))));
+      lcd.setCursor(_LCD_W_POS, 2); lcd_put_u8str_P(PSTR("Y:"));
+      lcd.print(ftostr52(LOGICAL_Y_POSITION(pgm_read_float(&ubl._mesh_index_to_ypos[y_plot]))));
 
       // Show the location value
-      lcd_moveto(_LCD_W_POS, 3); lcd_put_u8str(F("Z:"));
+      lcd.setCursor(_LCD_W_POS, 3); lcd_put_u8str_P(PSTR("Z:"));
 
-      if (!isnan(bedlevel.z_values[x_plot][y_plot]))
-        lcd.print(ftostr43sign(bedlevel.z_values[x_plot][y_plot]));
+      if (!isnan(ubl.z_values[x_plot][y_plot]))
+        lcd.print(ftostr43sign(ubl.z_values[x_plot][y_plot]));
       else
-        lcd_put_u8str(F(" -----"));
+        lcd_put_u8str_P(PSTR(" -----"));
 
-      center_text(GET_TEXT_F(MSG_UBL_FINE_TUNE_MESH), 8);
+      center_text_P(GET_TEXT(MSG_UBL_FINE_TUNE_MESH), 8);
 
       lcd.print_screen();
     }
 
   #endif // AUTO_BED_LEVELING_UBL
 
-#endif // HAS_MARLINUI_MENU
+#endif // HAS_LCD_MENU
 
 #endif // IS_TFTGLCD_PANEL

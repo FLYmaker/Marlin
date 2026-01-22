@@ -19,9 +19,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#include "../../platforms.h"
-
-#ifdef HAL_STM32
+#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
 
 #include "../../../inc/MarlinConfig.h"
 
@@ -46,6 +44,7 @@
 #define SDRAM_MODEREG_OPERATING_MODE_STANDARD    ((uint16_t)0x0000)
 #define SDRAM_MODEREG_WRITEBURST_MODE_PROGRAMMED ((uint16_t)0x0000)
 #define SDRAM_MODEREG_WRITEBURST_MODE_SINGLE     ((uint16_t)0x0200)
+
 
 void SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_SDRAM_CommandTypeDef *Command) {
 
@@ -193,7 +192,7 @@ void LTDC_Config() {
 
   hltdc_F.Instance = LTDC;
 
-  /* Layer0 Configuration ------------------------------------------------------*/
+/* Layer0 Configuration ------------------------------------------------------*/
 
   /* Windowing configuration */
   pLayerCfg.WindowX0 = 0;
@@ -246,28 +245,28 @@ uint16_t TFT_LTDC::y_cur = 0;
 uint8_t TFT_LTDC::reg = 0;
 volatile uint16_t* TFT_LTDC::framebuffer = (volatile uint16_t* )FRAME_BUFFER_ADDRESS;
 
-void TFT_LTDC::init() {
+void TFT_LTDC::Init() {
 
   // SDRAM pins init
-  for (uint16_t i = 0; pinMap_SDRAM[i].pin != NC; i++)
-    pinmap_pinout(pinMap_SDRAM[i].pin, pinMap_SDRAM);
+  for (uint16_t i = 0; PinMap_SDRAM[i].pin != NC; i++)
+    pinmap_pinout(PinMap_SDRAM[i].pin, PinMap_SDRAM);
 
   // SDRAM peripheral config
   SDRAM_Config();
 
   // LTDC pins init
-  for (uint16_t i = 0; pinMap_LTDC[i].pin != NC; i++)
-    pinmap_pinout(pinMap_LTDC[i].pin, pinMap_LTDC);
+  for (uint16_t i = 0; PinMap_LTDC[i].pin != NC; i++)
+    pinmap_pinout(PinMap_LTDC[i].pin, PinMap_LTDC);
 
   // LTDC peripheral config
   LTDC_Config();
 }
 
-uint32_t TFT_LTDC::getID() {
+uint32_t TFT_LTDC::GetID() {
   return 0xABAB;
 }
 
-uint32_t TFT_LTDC::readID(const tft_data_t inReg) {
+uint32_t TFT_LTDC::ReadID(tft_data_t Reg) {
   return 0xABAB;
 }
 
@@ -275,46 +274,47 @@ bool TFT_LTDC::isBusy() {
   return false;
 }
 
-uint16_t TFT_LTDC::readPoint(uint16_t x, uint16_t y) {
+uint16_t TFT_LTDC::ReadPoint(uint16_t x, uint16_t y) {
   return framebuffer[(TFT_WIDTH * y) + x];
 }
 
-void TFT_LTDC::drawPoint(uint16_t x, uint16_t y, uint16_t color) {
+void TFT_LTDC::DrawPoint(uint16_t x, uint16_t y, uint16_t color) {
   framebuffer[(TFT_WIDTH * y) + x] = color;
 }
 
-void TFT_LTDC::drawRect(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t color) {
+void TFT_LTDC::DrawRect(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t color) {
 
   if (sx == ex || sy == ey) return;
 
   uint16_t offline = TFT_WIDTH - (ex - sx);
   uint32_t addr = (uint32_t)&framebuffer[(TFT_WIDTH * sy) + sx];
 
-  CBI(DMA2D->CR, 0);
+  DMA2D->CR &= ~(1 << 0);
   DMA2D->CR = 3 << 16;
   DMA2D->OPFCCR = 0X02;
   DMA2D->OOR = offline;
   DMA2D->OMAR = addr;
   DMA2D->NLR = (ey - sy) | ((ex - sx) << 16);
   DMA2D->OCOLR = color;
-  SBI(DMA2D->CR, 0);
+  DMA2D->CR |= 1<<0;
 
   uint32_t timeout = 0;
-  while (!TEST(DMA2D->ISR, 1)) {
+  while((DMA2D->ISR & (1<<1)) == 0)
+  {
     timeout++;
-    if (timeout > 0x1FFFFF) break;
+    if(timeout>0X1FFFFF)break;
   }
-  SBI(DMA2D->IFCR, 1);
+  DMA2D->IFCR |= 1<<1;
 }
 
-void TFT_LTDC::drawImage(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *colors) {
+void TFT_LTDC::DrawImage(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *colors) {
 
   if (sx == ex || sy == ey) return;
 
   uint16_t offline = TFT_WIDTH - (ex - sx);
   uint32_t addr = (uint32_t)&framebuffer[(TFT_WIDTH * sy) + sx];
 
-  CBI(DMA2D->CR, 0);
+  DMA2D->CR &= ~(1 << 0);
   DMA2D->CR = 0 << 16;
   DMA2D->FGPFCCR = 0X02;
   DMA2D->FGOR = 0;
@@ -322,28 +322,29 @@ void TFT_LTDC::drawImage(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uin
   DMA2D->FGMAR = (uint32_t)colors;
   DMA2D->OMAR = addr;
   DMA2D->NLR = (ey - sy) | ((ex - sx) << 16);
-  SBI(DMA2D->CR, 0);
+  DMA2D->CR |= 1<<0;
 
   uint32_t timeout = 0;
-  while (!TEST(DMA2D->ISR, 1)) {
+  while((DMA2D->ISR & (1<<1)) == 0)
+  {
     timeout++;
-    if (timeout > 0x1FFFFF) break;
+    if(timeout>0X1FFFFF)break;
   }
-  SBI(DMA2D->IFCR, 1);
+  DMA2D->IFCR |= 1<<1;
 }
 
-void TFT_LTDC::writeData(uint16_t data) {
+void TFT_LTDC::WriteData(uint16_t data) {
   switch (reg) {
     case 0x01: x_cur = x_min = data; return;
     case 0x02: x_max = data; return;
     case 0x03: y_cur = y_min = data; return;
     case 0x04: y_max = data; return;
   }
-  transmit(data);
+  Transmit(data);
 }
 
-void TFT_LTDC::transmit(tft_data_t data) {
-  drawPoint(x_cur, y_cur, data);
+void TFT_LTDC::Transmit(tft_data_t Data) {
+  DrawPoint(x_cur, y_cur, Data);
   x_cur++;
   if (x_cur > x_max) {
     x_cur = x_min;
@@ -352,34 +353,38 @@ void TFT_LTDC::transmit(tft_data_t data) {
   }
 }
 
-void TFT_LTDC::transmit(uint32_t memoryIncrease, uint16_t *data, uint16_t count) {
+void TFT_LTDC::WriteReg(uint16_t Reg) {
+  reg = Reg;
+}
 
-  while (x_cur != x_min && count) {
-    transmit(*data);
-    if (memoryIncrease == DMA_PINC_ENABLE) data++;
-    count--;
+void TFT_LTDC::TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count) {
+
+  while (x_cur != x_min && Count) {
+    Transmit(*Data);
+    if (MemoryIncrease == DMA_PINC_ENABLE) Data++;
+    Count--;
   }
 
   uint16_t width = x_max - x_min + 1;
-  uint16_t height = count / width;
-  uint16_t x_end_cnt = count - (width * height);
+  uint16_t height = Count / width;
+  uint16_t x_end_cnt = Count - (width * height);
 
   if (height) {
-    if (memoryIncrease == DMA_PINC_ENABLE) {
-      drawImage(x_min, y_cur, x_min + width, y_cur + height, data);
-      data += width * height;
+    if (MemoryIncrease == DMA_PINC_ENABLE) {
+      DrawImage(x_min, y_cur, x_min + width, y_cur + height, Data);
+      Data += width * height;
+    } else {
+      DrawRect(x_min, y_cur, x_min + width, y_cur + height, *Data);
     }
-    else
-      drawRect(x_min, y_cur, x_min + width, y_cur + height, *data);
     y_cur += height;
   }
 
   while (x_end_cnt) {
-    transmit(*data);
-    if (memoryIncrease == DMA_PINC_ENABLE) data++;
+    Transmit(*Data);
+    if (MemoryIncrease == DMA_PINC_ENABLE) Data++;
     x_end_cnt--;
   }
 }
 
 #endif // HAS_LTDC_TFT
-#endif // HAL_STM32
+#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC

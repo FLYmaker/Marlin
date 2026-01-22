@@ -40,7 +40,7 @@ public:
   static bool enabled;
   static void enable()  { enabled = true; }
   static void disable() { enabled = false; }
-  static void toggle()  { FLIP(enabled); }
+  static void toggle()  { enabled = !enabled; }
 
   static uint8_t mode;                  // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
   static void set_mode(const uint8_t m) { mode = m; }
@@ -78,8 +78,10 @@ public:
 
     // Get the total flow (in liters per minute) since the last reading
     static void calc_flowrate() {
-      // flowrate = (litres) * (seconds) = litres per minute
-      flowrate = (flowpulses / (float)FLOWMETER_PPL) * ((1000.0f / (float)FLOWMETER_INTERVAL) * 60.0f);
+      //flowmeter_interrupt_disable();
+      //  const uint16_t pulses = flowpulses;
+      //flowmeter_interrupt_enable();
+      flowrate = flowpulses * 60.0f * (1000.0f / (FLOWMETER_INTERVAL)) * (1000.0f / (FLOWMETER_PPL));
       flowpulses = 0;
     }
 
@@ -94,12 +96,12 @@ public:
     }
 
     #if ENABLED(FLOWMETER_SAFETY)
-      static bool flowfault;                // Flag that the cooler is in a fault state
-      static bool flowsafety_enabled;       // Flag to disable the cutter if flow rate is too low
-      static void flowsafety_toggle()   { FLIP(flowsafety_enabled); }
+      static bool fault;                // Flag that the cooler is in a fault state
+      static bool flowsafety_enabled;   // Flag to disable the cutter if flow rate is too low
+      static void flowsafety_toggle()   { flowsafety_enabled = !flowsafety_enabled; }
       static bool check_flow_too_low() {
         const bool too_low = flowsafety_enabled && flowrate < (FLOWMETER_MIN_LITERS_PER_MINUTE);
-        flowfault =  too_low;
+        if (too_low) fault = true;
         return too_low;
       }
     #endif

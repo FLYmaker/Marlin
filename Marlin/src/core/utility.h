@@ -25,23 +25,30 @@
 #include "../core/types.h"
 #include "../core/millis_t.h"
 
+void safe_delay(millis_t ms);           // Delay ensuring that temperatures are updated and the watchdog is kept alive.
+#if ENABLED(MARLIN_DEV_MODE)
+  void early_safe_delay(millis_t ms);   // Delay ensuring that the watchdog is kept alive. Can be used before the Temperature ISR starts.
+#else
+  inline void early_safe_delay(millis_t ms) { safe_delay(ms); }
+#endif
+
 #if ENABLED(SERIAL_OVERRUN_PROTECTION)
   void serial_delay(const millis_t ms);
 #else
   inline void serial_delay(const millis_t) {}
 #endif
 
-#if GRID_MAX_POINTS
+#if (GRID_MAX_POINTS_X) && (GRID_MAX_POINTS_Y)
 
   // 16x16 bit arrays
   template <int W, int H>
   struct FlagBits {
-    bits_t(W) flags[H];
-    void fill()                                   { memset(flags, 0xFF, sizeof(flags)); }
-    void reset()                                  { memset(flags, 0x00, sizeof(flags)); }
-    void unmark(const uint8_t x, const uint8_t y) { CBI(flags[y], x); }
-    void mark(const uint8_t x, const uint8_t y)   { SBI(flags[y], x); }
-    bool marked(const uint8_t x, const uint8_t y) { return TEST(flags[y], x); }
+    typename IF<(W>8), uint16_t, uint8_t>::type bits[H];
+    void fill()                                   { memset(bits, 0xFF, sizeof(bits)); }
+    void reset()                                  { memset(bits, 0x00, sizeof(bits)); }
+    void unmark(const uint8_t x, const uint8_t y) { CBI(bits[y], x); }
+    void mark(const uint8_t x, const uint8_t y)   { SBI(bits[y], x); }
+    bool marked(const uint8_t x, const uint8_t y) { return TEST(bits[y], x); }
     inline void unmark(const xy_int8_t &xy)       { unmark(xy.x, xy.y); }
     inline void mark(const xy_int8_t &xy)         { mark(xy.x, xy.y); }
     inline bool marked(const xy_int8_t &xy)       { return marked(xy.x, xy.y); }
@@ -57,11 +64,6 @@
   #define log_machine_info() NOOP
 #endif
 
-/**
- * A restorer instance remembers a variable's value before setting a
- * new value, then restores the old value when it goes out of scope.
- * Put operator= on your type to get extended behavior on value change.
- */
 template<typename T>
 class restorer {
   T& ref_;
@@ -79,22 +81,3 @@ public:
 // Converts from an uint8_t in the range of 0-255 to an uint8_t
 // in the range 0-100 while avoiding rounding artifacts
 constexpr uint8_t ui8_to_percent(const uint8_t i) { return (int(i) * 100 + 127) / 255; }
-
-#if ENABLED(MARLIN_DEV_MODE)
-  enum MarlinError : uint8_t {
-    ERR_NONE,
-    ERR_STRING_RANGE, // A string buffer was too small to set the whole blob
-    ERR_ASSERTION,    // An assertion was triggered
-    ERR_MALFUNCTION,
-    ERR_MEMORY_LEAK,
-    ERR_COMMS_SERIAL,
-    ERR_COMMS_SPI,
-    ERR_PLANNER_STARVED,
-    ERR_TMC_SHUTDOWN,
-    ERR_PROCEDURE_FAILED,
-    ERR_TOO_WACK,
-    ERR_PLAID_IN_SUMMER
-  };
-  extern MarlinError marlin_error_number;   // Error Number - Marlin can beep, display, and emit...
-  inline void error(const MarlinError err) { marlin_error_number = err; }
-#endif

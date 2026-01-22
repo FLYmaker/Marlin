@@ -22,7 +22,7 @@
 
 #include "../../inc/MarlinConfig.h"
 
-#if HAS_PREHEAT
+#if PREHEAT_COUNT
 
 #include "../gcode.h"
 #include "../../lcd/marlinui.h"
@@ -37,7 +37,6 @@
  *   S<material>
  *   H<hotend temp>
  *   B<bed temp>
- *   C<chamber temp>
  *   F<fan speed>
  */
 void GcodeSuite::M145() {
@@ -48,15 +47,11 @@ void GcodeSuite::M145() {
     preheat_t &mat = ui.material_preset[material];
     #if HAS_HOTEND
       if (parser.seenval('H'))
-        mat.hotend_temp = constrain(parser.value_int(), thermalManager.extrude_min_temp, thermalManager.hotend_max_target(0));
+        mat.hotend_temp = constrain(parser.value_int(), EXTRUDE_MINTEMP, thermalManager.hotend_max_target(0));
     #endif
     #if HAS_HEATED_BED
       if (parser.seenval('B'))
         mat.bed_temp = constrain(parser.value_int(), BED_MINTEMP, BED_MAX_TARGET);
-    #endif
-    #if HAS_HEATED_CHAMBER
-      if (parser.seenval('C'))
-        mat.chamber_temp = constrain(parser.value_int(), CHAMBER_MINTEMP, CHAMBER_MAX_TARGET);
     #endif
     #if HAS_FAN
       if (parser.seenval('F'))
@@ -65,25 +60,4 @@ void GcodeSuite::M145() {
   }
 }
 
-void GcodeSuite::M145_report(const bool forReplay/*=true*/) {
-  TERN_(MARLIN_SMALL_BUILD, return);
-
-  report_heading(forReplay, F(STR_MATERIAL_HEATUP));
-  for (uint8_t i = 0; i < PREHEAT_COUNT; ++i) {
-    report_echo_start(forReplay);
-    SERIAL_ECHOLNPGM_P(
-      PSTR("  M145 S"), i
-      #if HAS_HOTEND
-        , PSTR(" H"), parser.to_temp_units(ui.material_preset[i].hotend_temp)
-      #endif
-      #if HAS_HEATED_BED
-        , SP_B_STR, parser.to_temp_units(ui.material_preset[i].bed_temp)
-      #endif
-      #if HAS_FAN
-        , PSTR(" F"), ui.material_preset[i].fan_speed
-      #endif
-    );
-  }
-}
-
-#endif // HAS_PREHEAT
+#endif // PREHEAT_COUNT

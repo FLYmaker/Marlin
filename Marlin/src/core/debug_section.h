@@ -26,21 +26,24 @@
 
 class SectionLog {
 public:
-  SectionLog(FSTR_P const fmsg=nullptr, bool inbug=true) {
-    the_msg = fmsg;
-    if ((debug = inbug)) echo_msg(F(">>>"));
+  SectionLog(PGM_P const msg=nullptr, bool inbug=true) {
+    the_msg = msg;
+    if ((debug = inbug)) echo_msg(PSTR(">>>"));
   }
 
-  ~SectionLog() { if (debug) echo_msg(F("<<<")); }
+  ~SectionLog() { if (debug) echo_msg(PSTR("<<<")); }
 
 private:
-  FSTR_P the_msg;
+  PGM_P the_msg;
   bool debug;
 
-  void echo_msg(FSTR_P const fpre) {
-    SERIAL_ECHO(fpre);
-    if (the_msg) SERIAL_ECHO(C(' '), the_msg);
+  void echo_msg(PGM_P const pre) {
+    SERIAL_ECHOPGM_P(pre);
+    if (the_msg) {
+      SERIAL_CHAR(' ');
+      SERIAL_ECHOPGM_P(the_msg);
+    }
     SERIAL_CHAR(' ');
-    print_xyz(xyz_pos_t(current_position));
+    print_xyz(current_position);
   }
 };

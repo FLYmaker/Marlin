@@ -19,12 +19,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
+
 #pragma once
 
 #include "env_validate.h"
 
-#if HAS_MULTI_HOTEND || E_STEPPERS > 1
-  #error "Anet ET4 only supports 1 hotend / E stepper."
+#include "env_validate.h"
+
+#if HOTENDS > 1 || E_STEPPERS > 1
+  #error "Anet ET4 only supports one hotend / E-stepper. Comment out this line to continue."
 #endif
 
 #ifndef BOARD_INFO_NAME
@@ -39,7 +42,7 @@
 #if NO_EEPROM_SELECTED
   //#define SRAM_EEPROM_EMULATION                 // Use BackSRAM-based EEPROM emulation
   #define FLASH_EEPROM_EMULATION                  // Use Flash-based EEPROM emulation
-  //#define IIC_BL24CXX_EEPROM                    // Use I2C EEPROM onboard IC (AT24C04C, Size 4K, PageSize 16B)
+  //#define IIC_BL24CXX_EEPROM                    // Use I2C EEPROM onboard IC (AT24C04C, Size 4KB, PageSize 16B)
 #endif
 
 #if ENABLED(FLASH_EEPROM_EMULATION)
@@ -50,7 +53,7 @@
   #define IIC_EEPROM_SDA                    PB11
   #define IIC_EEPROM_SCL                    PB10
   #define EEPROM_DEVICE_ADDRESS             0xA0
-  #define MARLIN_EEPROM_SIZE             0x1000U  // 4K
+  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
 #endif
 
 //
@@ -64,7 +67,7 @@
 // Z Probe
 //
 #if ENABLED(BLTOUCH)
-  #error "You will need to use 24V to 5V converter and remove one resistor and capacitor from the motherboard. See https://bit.ly/3xg9cXO for more information. Comment out this line to proceed at your own risk."
+  #error "You will need to use 24V to 5V converter and remove one resistor and capacitor from the motherboard. See https://github.com/davidtgbe/Marlin/blob/bugfix-2.0.x/docs/Tutorials/bltouch-en.md for more information. Comment out this line to proceed at your own risk."
   #define SERVO0_PIN                        PC3
 #elif !defined(Z_MIN_PROBE_PIN)
   #define Z_MIN_PROBE_PIN                   PC3
@@ -123,7 +126,7 @@
 //
 // Fans
 //
-#define FAN0_PIN                            PE3   // Layer fan
+#define FAN_PIN                             PE3   // Layer fan
 #define FAN1_PIN                            PE1   // Hotend fan
 
 #ifndef E0_AUTO_FAN_PIN
@@ -133,19 +136,14 @@
 //
 // LCD / Controller
 //
+#define TFT_RESET_PIN                       PE6
+#define TFT_CS_PIN                          PD7
+#define TFT_RS_PIN                          PD13
+#define TFT_INTERFACE_FSMC_8BIT
 
-#if HAS_SPI_TFT || HAS_FSMC_TFT
-  #define TFT_RESET_PIN                     PE6
-  #define TFT_CS_PIN                        PD7
-  #define TFT_RS_PIN                        PD13
-
-  #if HAS_FSMC_TFT
-    #define LCD_USE_DMA_FSMC
-    #define FSMC_CS_PIN               TFT_CS_PIN
-    #define FSMC_RS_PIN               TFT_RS_PIN
-    #define TFT_INTERFACE_FSMC_8BIT
-  #endif
-#endif
+#define LCD_USE_DMA_FSMC                          // Use DMA transfers to send data to the TFT
+#define FSMC_CS_PIN                   TFT_CS_PIN
+#define FSMC_RS_PIN                   TFT_RS_PIN
 
 //
 // Touch Screen
@@ -196,20 +194,27 @@
 //
 // SD Card
 //
-//#define ONBOARD_SDIO
+//#define SDIO_SUPPORT
 
 #ifndef SDCARD_CONNECTION
   #define SDCARD_CONNECTION         CUSTOM_CABLE
 #endif
 
-#if HAS_MEDIA
+#if ENABLED(SDSUPPORT)
 
-  #if DISABLED(ONBOARD_SDIO)
+  #define SDIO_D0_PIN                       PC8
+  #define SDIO_D1_PIN                       PC9
+  #define SDIO_D2_PIN                       PC10
+  #define SDIO_D3_PIN                       PC11
+  #define SDIO_CK_PIN                       PC12
+  #define SDIO_CMD_PIN                      PD2
+
+  #if DISABLED(SDIO_SUPPORT)
     #define SOFTWARE_SPI
-    #define SD_SS_PIN                       PC11
-    #define SD_SCK_PIN                      PC12
-    #define SD_MISO_PIN                     PC8
-    #define SD_MOSI_PIN                     PD2
+    #define SDSS                     SDIO_D3_PIN
+    #define SD_SCK_PIN               SDIO_CK_PIN
+    #define SD_MISO_PIN              SDIO_D0_PIN
+    #define SD_MOSI_PIN             SDIO_CMD_PIN
   #endif
 
   #ifndef SD_DETECT_PIN

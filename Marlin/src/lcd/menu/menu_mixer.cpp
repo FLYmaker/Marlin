@@ -26,7 +26,7 @@
 
 #include "../../inc/MarlinConfigPre.h"
 
-#if ALL(HAS_MARLINUI_MENU, MIXING_EXTRUDER)
+#if BOTH(HAS_LCD_MENU, MIXING_EXTRUDER)
 
 #include "menu_item.h"
 #include "menu_addon.h"
@@ -43,20 +43,21 @@
 
   void _lcd_mixer_gradient_z_edit(const bool isend) {
     ui.defer_status_screen();
-    ui.enable_encoder_multiplier(true);
+    ENCODER_RATE_MULTIPLY(true);
 
     float &zvar = isend ? mixer.gradient.end_z : mixer.gradient.start_z;
 
     if (ui.encoderPosition) {
       zvar += float(int32_t(ui.encoderPosition)) * 0.1;
       ui.encoderPosition = 0;
-      LIMIT(zvar, 0, Z_MAX_POS);
+      NOLESS(zvar, 0);
+      NOMORE(zvar, Z_MAX_POS);
     }
 
     if (ui.should_draw()) {
       char tmp[16];
       SETCURSOR(1, (LCD_HEIGHT - 1) / 2);
-      lcd_put_u8str(isend ? GET_TEXT_F(MSG_END_Z) : GET_TEXT_F(MSG_START_Z));
+      lcd_put_u8str_P(isend ? GET_TEXT(MSG_END_Z) : GET_TEXT(MSG_START_Z));
       sprintf_P(tmp, PSTR("%4d.%d mm"), int(zvar), int(zvar * 10) % 10);
       SETCURSOR_RJ(9, (LCD_HEIGHT - 1) / 2);
       lcd_put_u8str(tmp);
@@ -88,15 +89,15 @@
 
     char tmp[18];
 
-    FSTR_P const slabel = GET_TEXT_F(MSG_START_Z);
-    SUBMENU_F(slabel, []{ _lcd_mixer_gradient_z_edit(false); });
+    PGM_P const slabel = GET_TEXT(MSG_START_Z);
+    SUBMENU_P(slabel, []{ _lcd_mixer_gradient_z_edit(false); });
     MENU_ITEM_ADDON_START_RJ(11);
       sprintf_P(tmp, PSTR("%4d.%d mm"), int(mixer.gradient.start_z), int(mixer.gradient.start_z * 10) % 10);
       lcd_put_u8str(tmp);
     MENU_ITEM_ADDON_END();
 
-    FSTR_P const elabel = GET_TEXT_F(MSG_END_Z);
-    SUBMENU_F(elabel, []{ _lcd_mixer_gradient_z_edit(true); });
+    PGM_P const elabel = GET_TEXT(MSG_END_Z);
+    SUBMENU_P(elabel, []{ _lcd_mixer_gradient_z_edit(true); });
     MENU_ITEM_ADDON_START_RJ(11);
       sprintf_P(tmp, PSTR("%4d.%d mm"), int(mixer.gradient.end_z), int(mixer.gradient.end_z * 10) % 10);
       lcd_put_u8str(tmp);
@@ -112,8 +113,8 @@ static uint8_t v_index;
 #if HAS_DUAL_MIXING
   void _lcd_draw_mix(const uint8_t y) {
     char tmp[20]; // "100%_100%"
-    sprintf_P(tmp, PSTR("%3d%% %3d%% "), int(mixer.mix[0]), int(mixer.mix[1]));
-    SETCURSOR(2, y); lcd_put_u8str(GET_TEXT_F(MSG_MIX));
+    sprintf_P(tmp, PSTR("%3d%% %3d%%"), int(mixer.mix[0]), int(mixer.mix[1]));
+    SETCURSOR(2, y); lcd_put_u8str_P(GET_TEXT(MSG_MIX));
     SETCURSOR_RJ(10, y); lcd_put_u8str(tmp);
   }
 #endif
@@ -170,7 +171,7 @@ void lcd_mixer_mix_edit() {
 
     #if CHANNEL_MIX_EDITING
 
-      for (uint8_t n = 1; n <= MIXING_STEPPERS; ++n)
+      LOOP_S_LE_N(n, 1, MIXING_STEPPERS)
         EDIT_ITEM_FAST_N(float42_52, n, MSG_MIX_COMPONENT_N, &mixer.collector[n-1], 0, 10);
 
       ACTION_ITEM(MSG_CYCLE_MIX, _lcd_mixer_cycle_mix);
@@ -225,7 +226,7 @@ void lcd_mixer_mix_edit() {
 
 void menu_mixer() {
   START_MENU();
-  BACK_ITEM(MSG_MAIN_MENU);
+  BACK_ITEM(MSG_MAIN);
 
   v_index = mixer.get_current_vtool();
   EDIT_ITEM(uint8, MSG_ACTIVE_VTOOL, &v_index, 0, MIXING_VIRTUAL_TOOLS - 1, _lcd_mixer_select_vtool, ENABLED(HAS_DUAL_MIXING));
@@ -252,11 +253,11 @@ void menu_mixer() {
     MSG_BUTTON_RESET, MSG_BUTTON_CANCEL,
     []{
       mixer.reset_vtools();
-      LCD_MESSAGE(MSG_VTOOLS_RESET);
+      LCD_MESSAGEPGM(MSG_VTOOLS_RESET);
       ui.return_to_status();
     },
     nullptr,
-    GET_TEXT_F(MSG_RESET_VTOOLS), (const char *)nullptr, F("?")
+    GET_TEXT(MSG_RESET_VTOOLS), (const char *)nullptr, PSTR("?")
   );
 
   #if ENABLED(GRADIENT_MIX)
@@ -274,4 +275,4 @@ void menu_mixer() {
   END_MENU();
 }
 
-#endif // HAS_MARLINUI_MENU && MIXING_EXTRUDER
+#endif // HAS_LCD_MENU && MIXING_EXTRUDER

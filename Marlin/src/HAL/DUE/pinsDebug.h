@@ -2,9 +2,6 @@
  * Marlin 3D Printer Firmware
  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
- * Based on Sprinter and grbl.
- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
- *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -19,26 +16,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#pragma once
 
 /**
- * Pins Debugging for DUE
- *
- *   - NUMBER_PINS_TOTAL
- *   - MULTI_NAME_PAD
- *   - getPinByIndex(index)
- *   - printPinNameByIndex(index)
- *   - getPinIsDigitalByIndex(index)
- *   - digitalPinToAnalogIndex(pin)
- *   - getValidPinMode(pin)
- *   - isValidPin(pin)
- *   - isAnalogPin(pin)
- *   - digitalRead_mod(pin)
- *   - pwm_status(pin)
- *   - printPinPWM(pin)
- *   - printPinPort(pin)
- *   - printPinNumber(pin)
- *   - printPinAnalog(pin)
+ * Support routines for Due
+ */
+
+/**
+ * Translation of routines & variables used by pinsDebug.h
  */
 
 #include "../shared/Marduino.h"
@@ -66,7 +50,7 @@
  *     The net result is that both the g_pinStatus[pin] array and the PIO_OSR register
  *     needs to be looked at when determining if a pin is an input or an output.
  *
- * b) Due has only pins 6, 7, 8 & 9 enabled for PWMs.  FYI - they run at 1kHz
+ * b) Due has only pins 6, 7, 8 & 9 enabled for PWMs.  FYI - they run at 1KHz
  *
  * c) NUM_DIGITAL_PINS does not include the analog pins
  *
@@ -76,20 +60,20 @@
 
 #define NUMBER_PINS_TOTAL PINS_COUNT
 
-#define digitalRead_mod(P) extDigitalRead(P)  // AVR digitalRead disabled PWM before it read the pin
-#define printPinNameByIndex(x) do{ sprintf_P(buffer, PSTR("%-" STRINGIFY(MAX_NAME_LENGTH) "s"), pin_array[x].name); SERIAL_ECHO(buffer); }while(0)
-#define printPinNumber(P) do{ sprintf_P(buffer, PSTR("%02d"), P); SERIAL_ECHO(buffer); }while(0)
-#define printPinAnalog(P) do{ sprintf_P(buffer, PSTR(" (A%2d)  "), digitalPinToAnalogIndex(P)); SERIAL_ECHO(buffer); }while(0)
-#define getPinByIndex(x) pin_array[x].pin
-#define getPinIsDigitalByIndex(x) pin_array[x].is_digital
-#define isValidPin(P) (P >= 0 && P < pin_t(NUMBER_PINS_TOTAL))
-#define digitalPinToAnalogIndex(P) int(P - analogInputToDigitalPin(0))
-#define isAnalogPin(P) WITHIN(P, pin_t(analogInputToDigitalPin(0)), pin_t(analogInputToDigitalPin(NUM_ANALOG_INPUTS - 1)))
-#define pwm_status(P) (((g_pinStatus[P] & 0xF) == PIN_STATUS_PWM) && \
-                        ((g_APinDescription[P].ulPinAttribute & PIN_ATTR_PWM) == PIN_ATTR_PWM))
+#define digitalRead_mod(p) extDigitalRead(p)  // AVR digitalRead disabled PWM before it read the pin
+#define PRINT_PORT(p)
+#define PRINT_ARRAY_NAME(x) do{ sprintf_P(buffer, PSTR("%-" STRINGIFY(MAX_NAME_LENGTH) "s"), pin_array[x].name); SERIAL_ECHO(buffer); }while(0)
+#define PRINT_PIN(p) do{ sprintf_P(buffer, PSTR("%02d"), p); SERIAL_ECHO(buffer); }while(0)
+#define GET_ARRAY_PIN(p) pin_array[p].pin
+#define GET_ARRAY_IS_DIGITAL(p) pin_array[p].is_digital
+#define VALID_PIN(pin) (pin >= 0 && pin < (int8_t)NUMBER_PINS_TOTAL ? 1 : 0)
+#define DIGITAL_PIN_TO_ANALOG_PIN(p) int(p - analogInputToDigitalPin(0))
+#define IS_ANALOG(P) WITHIN(P, char(analogInputToDigitalPin(0)), char(analogInputToDigitalPin(NUM_ANALOG_INPUTS - 1)))
+#define pwm_status(pin) (((g_pinStatus[pin] & 0xF) == PIN_STATUS_PWM) && \
+                        ((g_APinDescription[pin].ulPinAttribute & PIN_ATTR_PWM) == PIN_ATTR_PWM))
 #define MULTI_NAME_PAD 14 // space needed to be pretty if not first name assigned to a pin
 
-bool getValidPinMode(const pin_t pin) {  // 1: output, 0: input
+bool GET_PINMODE(int8_t pin) {  // 1: output, 0: input
   volatile Pio* port = g_APinDescription[pin].pPort;
   uint32_t mask = g_APinDescription[pin].ulPin;
   uint8_t pin_status = g_pinStatus[pin] & 0xF;
@@ -98,14 +82,13 @@ bool getValidPinMode(const pin_t pin) {  // 1: output, 0: input
           || pwm_status(pin));
 }
 
-void printPinPWM(const int32_t pin) {
+
+void pwm_details(int32_t pin) {
   if (pwm_status(pin)) {
     uint32_t chan = g_APinDescription[pin].ulPWMChannel;
-    SERIAL_ECHOPGM("PWM = ", PWM_INTERFACE->PWM_CH_NUM[chan].PWM_CDTY);
+    SERIAL_ECHOPAIR("PWM = ", PWM_INTERFACE->PWM_CH_NUM[chan].PWM_CDTY);
   }
 }
-
-void printPinPort(const pin_t) {}
 
 /**
  * DUE Board pin   |  PORT  | Label

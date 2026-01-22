@@ -31,6 +31,7 @@ e-mail   :  support@circuitsathome.com
  * Universal Arduino(tm) "IDE" fixups.
  */
 
+
 // Just in case...
 #ifndef SERIAL_PORT_MONITOR
 #define SERIAL_PORT_MONITOR Serial
@@ -55,6 +56,7 @@ e-mail   :  support@circuitsathome.com
 #undef false
 #endif
 #endif
+
 
 #ifndef UHS_DEVICE_WINDOWS_USB_SPEC_VIOLATION_DESCRIPTOR_DEVICE
 
@@ -148,7 +150,7 @@ e-mail   :  support@circuitsathome.com
 // HANDY MACROS
 ////////////////////////////////////////////////////////////////////////////////
 
-// Atomically set/clear single bits using bitbands.
+// Atmoically set/clear single bits using bitbands.
 // Believe it or not, this boils down to a constant,
 // and is less code than using |= &= operators.
 // Bonus, it makes code easier to read too.
@@ -157,6 +159,7 @@ e-mail   :  support@circuitsathome.com
 #define UHS_KIO_BITBAND_ADDR(r, i) (((uint32_t)&(r) - 0x40000000) * 32 + (i) * 4 + 0x42000000)
 #define UHS_KIO_SETBIT_ATOMIC(r, m) (*(uint32_t *)UHS_KIO_BITBAND_ADDR((r), BITNR((m)))) = 1
 #define UHS_KIO_CLRBIT_ATOMIC(r, m) (*(uint32_t *)UHS_KIO_BITBAND_ADDR((r), BITNR((m)))) = 0
+
 
 #define VALUE_BETWEEN(v,l,h) (((v)>(l)) && ((v)<(h)))
 #define VALUE_WITHIN(v,l,h) (((v)>=(l)) && ((v)<=(h)))

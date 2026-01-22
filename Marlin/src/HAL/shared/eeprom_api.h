@@ -1,9 +1,10 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
- * Based on Sprinter and grbl.
- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+ * Copyright (c) 2016 Victor Perez victor_pv@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,19 +26,6 @@
 #include <stdint.h>
 
 #include "../../libs/crc16.h"
-
-// For testing. Define with -DEEPROM_EXCL_ZONE=916,926 in INI files.
-//#define EEPROM_EXCL_ZONE 916,926  // Test a range
-//#define EEPROM_EXCL_ZONE 333      // Test a single byte
-
-#ifdef EEPROM_EXCL_ZONE
-  static constexpr int eeprom_exclude_zone[] = { EEPROM_EXCL_ZONE },
-                       eeprom_exclude_size = eeprom_exclude_zone[COUNT(eeprom_exclude_zone) - 1] - eeprom_exclude_zone[0] + 1;
-  #define REAL_EEPROM_ADDR(A) (A < eeprom_exclude_zone[0] ? (A) : (A) + eeprom_exclude_size)
-#else
-  #define REAL_EEPROM_ADDR(A) (A)
-  static constexpr int eeprom_exclude_size = 0;
-#endif
 
 class PersistentStore {
 public:
@@ -61,7 +49,7 @@ public:
 
   // Write one or more bytes of data
   // Return 'true' on write error
-  static bool write_data(const int pos, const uint8_t *value, const size_t size=sizeof(uint8_t)) {
+  static inline bool write_data(const int pos, const uint8_t *value, const size_t size=sizeof(uint8_t)) {
     int data_pos = pos;
     uint16_t crc = 0;
     return write_data(data_pos, value, size, &crc);
@@ -69,11 +57,11 @@ public:
 
   // Write a single byte of data
   // Return 'true' on write error
-  static bool write_data(const int pos, const uint8_t value) { return write_data(pos, &value); }
+  static inline bool write_data(const int pos, const uint8_t value) { return write_data(pos, &value); }
 
   // Read one or more bytes of data
   // Return 'true' on read error
-  static bool read_data(const int pos, uint8_t *value, const size_t size=1) {
+  static inline bool read_data(const int pos, uint8_t *value, const size_t size=1) {
     int data_pos = pos;
     uint16_t crc = 0;
     return read_data(data_pos, value, size, &crc);

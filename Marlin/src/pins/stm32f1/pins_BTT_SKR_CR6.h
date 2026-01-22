@@ -25,9 +25,8 @@
  * BigTreeTech SKR CR-6 (STM32F103RET6) board pin assignments
  */
 
-#define DEFAULT_MACHINE_NAME "Creality CR-6 SE"
+#define DEFAULT_MACHINE_NAME "Creality3D"
 #define BOARD_INFO_NAME "BTT SKR CR-6"
-#define BOARD_WEBSITE_URL "github.com/bigtreetech/BIGTREETECH-SKR-CR6"
 
 #include "env_validate.h"
 
@@ -50,13 +49,17 @@
   #define I2C_EEPROM
 #endif
 
+/* I2C */
 #if ENABLED(I2C_EEPROM)
   #define IIC_EEPROM_SDA                    PB7
   #define IIC_EEPROM_SCL                    PB6
-  #define MARLIN_EEPROM_SIZE             0x1000U  // 4K
+
+  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
 #elif ENABLED(SDCARD_EEPROM_EMULATION)
-  #define MARLIN_EEPROM_SIZE             0x1000U  // 4K
+  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
 #endif
+
+#define E2END           (MARLIN_EEPROM_SIZE - 1)  // 2KB
 
 //
 // Limit Switches
@@ -64,22 +67,15 @@
 
 #define X_STOP_PIN                          PC0
 #define Y_STOP_PIN                          PC1
-#define Z_STOP_PIN                          PC14  // Endstop or Probe
+#define Z_STOP_PIN                          PC14  // Endtop or Probe
 
 #define FIL_RUNOUT_PIN                      PC15
 
 //
 // Probe
 //
-#ifndef PROBE_TARE_PIN
-  #define PROBE_TARE_PIN                    PA1
-#endif
-
-#if ENABLED(PROBE_ACTIVATION_SWITCH)
-  #ifndef PROBE_ACTIVATION_SWITCH_PIN
-    #define PROBE_ACTIVATION_SWITCH_PIN     PC2   // Optoswitch to Enable Z Probe
-  #endif
-#endif
+#define PROBE_TARE_PIN                      PA1
+#define PROBE_ACTIVATION_SWITCH_PIN         PC2   // Optoswitch to Enable Z Probe
 
 //
 // Steppers
@@ -113,22 +109,21 @@
 #define HEATER_0_PIN                        PC8   // HEATER1
 #define HEATER_BED_PIN                      PC9   // HOT BED
 
-#define FAN0_PIN                            PC6   // FAN
-#define FAN_SOFT_PWM_REQUIRED
+#define FAN_PIN                             PC6   // FAN
+#define FAN_SOFT_PWM
 
 #define CONTROLLER_FAN_PIN                  PC7
 
 //
 // LCD / Controller
 //
-
 #if ENABLED(CR10_STOCKDISPLAY)
   #define BTN_ENC                           PA15
   #define BTN_EN1                           PA9
   #define BTN_EN2                           PA10
 
   #define LCD_PINS_RS                       PB8
-  #define LCD_PINS_EN                       PB15
+  #define LCD_PINS_ENABLE                   PB15
   #define LCD_PINS_D4                       PB9
 
   #define BEEPER_PIN                        PB5
@@ -136,7 +131,7 @@
 
 #if HAS_TMC_UART
   /**
-   * TMC2208/TMC2209 stepper drivers
+   * TMC2209 stepper drivers
    * Hardware serial communication ports.
    */
   #define X_HARDWARE_SERIAL  MSerial4
@@ -146,26 +141,24 @@
 
   // Default TMC slave addresses
   #ifndef X_SLAVE_ADDRESS
-    #define X_SLAVE_ADDRESS                    0
+    #define X_SLAVE_ADDRESS  0
   #endif
   #ifndef Y_SLAVE_ADDRESS
-    #define Y_SLAVE_ADDRESS                    1
+    #define Y_SLAVE_ADDRESS  1
   #endif
   #ifndef Z_SLAVE_ADDRESS
-    #define Z_SLAVE_ADDRESS                    2
+    #define Z_SLAVE_ADDRESS  2
   #endif
   #ifndef E0_SLAVE_ADDRESS
-    #define E0_SLAVE_ADDRESS                   3
+    #define E0_SLAVE_ADDRESS 3
   #endif
-  static_assert(X_SLAVE_ADDRESS == 0, "X_SLAVE_ADDRESS must be 0 for BOARD_BTT_SKR_CR6.");
-  static_assert(Y_SLAVE_ADDRESS == 1, "Y_SLAVE_ADDRESS must be 1 for BOARD_BTT_SKR_CR6.");
-  static_assert(Z_SLAVE_ADDRESS == 2, "Z_SLAVE_ADDRESS must be 2 for BOARD_BTT_SKR_CR6.");
-  static_assert(E0_SLAVE_ADDRESS == 3, "E0_SLAVE_ADDRESS must be 3 for BOARD_BTT_SKR_CR6.");
 #endif
 
 //
 // SD Card
 //
+
+#define HAS_ONBOARD_SD
 
 #ifndef SDCARD_CONNECTION
   #define SDCARD_CONNECTION              ONBOARD
@@ -173,20 +166,16 @@
 
 #if SD_CONNECTION_IS(ONBOARD)
   #define SD_DETECT_PIN                     PC4
+
+  #define ON_BOARD_SPI_DEVICE                  1  // SPI1
   #define ONBOARD_SD_CS_PIN                 PA4   // Chip select for "System" SD card
-  #define SD_SS_PIN            ONBOARD_SD_CS_PIN
 #endif
 
 //
 // Misc. Functions
 //
-#define CASE_LIGHT_PIN                      PA13
+#define LED_CONTROL_PIN                     PA13
 
-#ifndef BOARD_NEOPIXEL_PIN
-  #define BOARD_NEOPIXEL_PIN                PA8
-#endif
-
-#define SUICIDE_PIN                         PC13
-#ifndef SUICIDE_PIN_STATE
-  #define SUICIDE_PIN_STATE                  LOW
+#ifndef NEOPIXEL_PIN
+  #define NEOPIXEL_PIN                      PA8
 #endif

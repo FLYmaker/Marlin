@@ -59,9 +59,10 @@ typedef uint8_t byte;
 #endif
 
 #define sq(v) ((v) * (v))
+#define square(v) sq(v)
 #define constrain(value, arg_min, arg_max) ((value) < (arg_min) ? (arg_min) :((value) > (arg_max) ? (arg_max) : (value)))
 
-// Interrupts
+//Interrupts
 void cli(); // Disable
 void sei(); // Enable
 void attachInterrupt(uint32_t pin, void (*callback)(), uint32_t mode);
@@ -73,11 +74,12 @@ extern "C" {
 }
 
 // Time functions
-extern "C" void delay(const int ms);
+extern "C" void delay(const int milis);
+void _delay_ms(const int delay);
 void delayMicroseconds(unsigned long);
-unsigned long millis();
+uint32_t millis();
 
-// IO functions
+//IO functions
 void pinMode(const pin_t, const uint8_t);
 void digitalWrite(pin_t, uint8_t);
 bool digitalRead(pin_t);

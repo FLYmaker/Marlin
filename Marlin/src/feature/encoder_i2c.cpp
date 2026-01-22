@@ -27,6 +27,7 @@
 //todo:  try faster I2C speed; tweak TWI_FREQ (400000L, or faster?); or just TWBR = ((CPU_FREQ / 400000L) - 16) / 2;
 //todo:    consider Marlin-optimized Wire library; i.e. MarlinWire, like MarlinSerial
 
+
 #include "../inc/MarlinConfig.h"
 
 #if ENABLED(I2C_POSITION_ENCODERS)
@@ -36,7 +37,7 @@
 #include "../module/stepper.h"
 #include "../gcode/parser.h"
 
-#include "babystep.h"
+#include "../feature/babystep.h"
 
 #include <Wire.h>
 
@@ -48,7 +49,7 @@ void I2CPositionEncoder::init(const uint8_t address, const AxisEnum axis) {
 
   initialized = true;
 
-  SERIAL_ECHOLNPGM("Setting up encoder on ", C(AXIS_CHAR(encoderAxis)), " axis, addr = ", address);
+  SERIAL_ECHOLNPAIR("Setting up encoder on ", AS_CHAR(axis_codes[encoderAxis]), " axis, addr = ", address);
 
   position = get_position();
 }
@@ -66,7 +67,7 @@ void I2CPositionEncoder::update() {
     /*
     if (trusted) { //commented out as part of the note below
       trusted = false;
-      SERIAL_ECHOLNPGM("Fault detected on ", C(AXIS_CHAR(encoderAxis)), " axis encoder. Disengaging error correction until module is trusted again.");
+      SERIAL_ECHOLNPAIR("Fault detected on ", AS_CHAR(axis_codes[encoderAxis]), " axis encoder. Disengaging error correction until module is trusted again.");
     }
     */
     return;
@@ -91,9 +92,9 @@ void I2CPositionEncoder::update() {
       if (millis() - lastErrorTime > I2CPE_TIME_TRUSTED) {
         trusted = true;
 
-        SERIAL_ECHOLNPGM("Untrusted encoder module on ", C(AXIS_CHAR(encoderAxis)), " axis has been fault-free for set duration, reinstating error correction.");
+        SERIAL_ECHOLNPAIR("Untrusted encoder module on ", AS_CHAR(axis_codes[encoderAxis]), " axis has been fault-free for set duration, reinstating error correction.");
 
-        //the encoder likely lost its place when the error occurred, so we'll reset and use the printer's
+        //the encoder likely lost its place when the error occured, so we'll reset and use the printer's
         //idea of where it the axis is to re-initialize
         const float pos = planner.get_axis_position_mm(encoderAxis);
         int32_t positionInTicks = pos * get_ticks_unit();
@@ -102,10 +103,13 @@ void I2CPositionEncoder::update() {
         zeroOffset -= (positionInTicks - get_position());
 
         #ifdef I2CPE_DEBUG
-          SERIAL_ECHOLNPGM("Current position is ", pos);
-          SERIAL_ECHOLNPGM("Position in encoder ticks is ", positionInTicks);
-          SERIAL_ECHOLNPGM("New zero-offset of ", zeroOffset);
-          SERIAL_ECHOLN(F("New position reads as "), get_position(), C('('), mm_from_count(get_position()), C(')'));
+          SERIAL_ECHOLNPAIR("Current position is ", pos);
+          SERIAL_ECHOLNPAIR("Position in encoder ticks is ", positionInTicks);
+          SERIAL_ECHOLNPAIR("New zero-offset of ", zeroOffset);
+          SERIAL_ECHOPAIR("New position reads as ", get_position());
+          SERIAL_CHAR('(');
+          SERIAL_DECIMAL(mm_from_count(get_position()));
+          SERIAL_ECHOLNPGM(")");
         #endif
       }
     #endif
@@ -134,7 +138,7 @@ void I2CPositionEncoder::update() {
       errIdx = (errIdx >= I2CPE_ERR_ARRAY_SIZE - 1) ? 0 : errIdx + 1;
       err[errIdx] = get_axis_error_steps(false);
 
-      for (uint8_t i = 0; i < I2CPE_ERR_ARRAY_SIZE; ++i) {
+      LOOP_L_N(i, I2CPE_ERR_ARRAY_SIZE) {
         sum += err[i];
         if (i) diffSum += ABS(err[i-1] - err[i]);
       }
@@ -145,12 +149,12 @@ void I2CPositionEncoder::update() {
       const int32_t error = get_axis_error_steps(false);
     #endif
 
-    //SERIAL_ECHOLNPGM("Axis error steps: ", error);
+    //SERIAL_ECHOLNPAIR("Axis error steps: ", error);
 
     #ifdef I2CPE_ERR_THRESH_ABORT
       if (ABS(error) > I2CPE_ERR_THRESH_ABORT * planner.settings.axis_steps_per_mm[encoderAxis]) {
-        //marlin.kill(F("Significant Error"));
-        SERIAL_ECHOLNPGM("Axis error over threshold, aborting!", error);
+        //kill(PSTR("Significant Error"));
+        SERIAL_ECHOLNPAIR("Axis error over threshold, aborting!", error);
         safe_delay(5000);
       }
     #endif
@@ -166,9 +170,10 @@ void I2CPositionEncoder::update() {
           errPrst[errPrstIdx++] = error; // Error must persist for I2CPE_ERR_PRST_ARRAY_SIZE error cycles. This also serves to improve the average accuracy
           if (errPrstIdx >= I2CPE_ERR_PRST_ARRAY_SIZE) {
             float sumP = 0;
-            for (uint8_t i = 0; i < I2CPE_ERR_PRST_ARRAY_SIZE; ++i) sumP += errPrst[i];
+            LOOP_L_N(i, I2CPE_ERR_PRST_ARRAY_SIZE) sumP += errPrst[i];
             const int32_t errorP = int32_t(sumP * RECIPROCAL(I2CPE_ERR_PRST_ARRAY_SIZE));
-            SERIAL_ECHOLN(C(AXIS_CHAR(encoderAxis)), F(" : CORRECT ERR "), errorP * planner.mm_per_step[encoderAxis], F("mm"));
+            SERIAL_CHAR(axis_codes[encoderAxis]);
+            SERIAL_ECHOLNPAIR(" : CORRECT ERR ", errorP * planner.steps_to_mm[encoderAxis], "mm");
             babystep.add_steps(encoderAxis, -LROUND(errorP));
             errPrstIdx = 0;
           }
@@ -187,7 +192,8 @@ void I2CPositionEncoder::update() {
     if (ABS(error) > I2CPE_ERR_CNT_THRESH * planner.settings.axis_steps_per_mm[encoderAxis]) {
       const millis_t ms = millis();
       if (ELAPSED(ms, nextErrorCountTime)) {
-        SERIAL_ECHOLN(C(AXIS_CHAR(encoderAxis)), F(" : LARGE ERR "), error, F("; diffSum="), diffSum);
+        SERIAL_CHAR(axis_codes[encoderAxis]);
+        SERIAL_ECHOLNPAIR(" : LARGE ERR ", error, "; diffSum=", diffSum);
         errorCount++;
         nextErrorCountTime = ms + I2CPE_ERR_CNT_DEBOUNCE_MS;
       }
@@ -206,7 +212,8 @@ void I2CPositionEncoder::set_homed() {
     homed = trusted = true;
 
     #ifdef I2CPE_DEBUG
-      SERIAL_ECHO(C(AXIS_CHAR(encoderAxis)), F(" axis encoder homed, offset of "), zeroOffset, F(" ticks.\n"));
+      SERIAL_CHAR(axis_codes[encoderAxis]);
+      SERIAL_ECHOLNPAIR(" axis encoder homed, offset of ", zeroOffset, " ticks.");
     #endif
   }
 }
@@ -216,15 +223,16 @@ void I2CPositionEncoder::set_unhomed() {
   homed = trusted = false;
 
   #ifdef I2CPE_DEBUG
-    SERIAL_ECHO(C(AXIS_CHAR(encoderAxis)), F(" axis encoder unhomed.\n"));
+    SERIAL_CHAR(axis_codes[encoderAxis]);
+    SERIAL_ECHOLNPGM(" axis encoder unhomed.");
   #endif
 }
 
 bool I2CPositionEncoder::passes_test(const bool report) {
   if (report) {
     if (H != I2CPE_MAG_SIG_GOOD) SERIAL_ECHOPGM("Warning. ");
-    SERIAL_CHAR(AXIS_CHAR(encoderAxis));
-    serial_ternary(F(" axis "), H == I2CPE_MAG_SIG_BAD, F("magnetic strip "), F("encoder "));
+    SERIAL_CHAR(axis_codes[encoderAxis]);
+    serial_ternary(H == I2CPE_MAG_SIG_BAD, PSTR(" axis "), PSTR("magnetic strip "), PSTR("encoder "));
     switch (H) {
       case I2CPE_MAG_SIG_GOOD:
       case I2CPE_MAG_SIG_MID:
@@ -243,8 +251,10 @@ float I2CPositionEncoder::get_axis_error_mm(const bool report) {
               diff = actual - target,
               error = ABS(diff) > 10000 ? 0 : diff; // Huge error is a bad reading
 
-  if (report)
-    SERIAL_ECHO(C(AXIS_CHAR(encoderAxis)), F(" axis target="), target, F("mm; actual="), actual, F("mm; err="), error, F("mm\n"));
+  if (report) {
+    SERIAL_CHAR(axis_codes[encoderAxis]);
+    SERIAL_ECHOLNPAIR(" axis target=", target, "mm; actual=", actual, "mm; err=", error, "mm");
+  }
 
   return error;
 }
@@ -252,7 +262,7 @@ float I2CPositionEncoder::get_axis_error_mm(const bool report) {
 int32_t I2CPositionEncoder::get_axis_error_steps(const bool report) {
   if (!active) {
     if (report) {
-      SERIAL_CHAR(AXIS_CHAR(encoderAxis));
+      SERIAL_CHAR(axis_codes[encoderAxis]);
       SERIAL_ECHOLNPGM(" axis encoder not active!");
     }
     return 0;
@@ -276,8 +286,10 @@ int32_t I2CPositionEncoder::get_axis_error_steps(const bool report) {
 
   errorPrev = error;
 
-  if (report)
-    SERIAL_ECHOLN(C(AXIS_CHAR(encoderAxis)), F(" axis target="), target, F("; actual="), encoderCountInStepperTicksScaled, F("; err="), error);
+  if (report) {
+    SERIAL_CHAR(axis_codes[encoderAxis]);
+    SERIAL_ECHOLNPAIR(" axis target=", target, "; actual=", encoderCountInStepperTicksScaled, "; err=", error);
+  }
 
   if (suppressOutput) {
     if (report) SERIAL_ECHOLNPGM("!Discontinuity. Suppressing error.");
@@ -315,7 +327,7 @@ int32_t I2CPositionEncoder::get_raw_count() {
 }
 
 bool I2CPositionEncoder::test_axis() {
-  // Only works on XYZ Cartesian machines for the time being
+  //only works on XYZ cartesian machines for the time being
   if (!(encoderAxis == X_AXIS || encoderAxis == Y_AXIS || encoderAxis == Z_AXIS)) return false;
 
   const float startPosition = soft_endstop.min[encoderAxis] + 10,
@@ -325,7 +337,7 @@ bool I2CPositionEncoder::test_axis() {
   ec = false;
 
   xyze_pos_t startCoord, endCoord;
-  LOOP_NUM_AXES(a) {
+  LOOP_XYZ(a) {
     startCoord[a] = planner.get_axis_position_mm((AxisEnum)a);
     endCoord[a] = planner.get_axis_position_mm((AxisEnum)a);
   }
@@ -333,12 +345,9 @@ bool I2CPositionEncoder::test_axis() {
   endCoord[encoderAxis] = endPosition;
 
   planner.synchronize();
-
-  #if HAS_EXTRUDERS
-    startCoord.e = planner.get_axis_position_mm(E_AXIS);
-    planner.buffer_line(startCoord, fr_mm_s, 0);
-    planner.synchronize();
-  #endif
+  startCoord.e = planner.get_axis_position_mm(E_AXIS);
+  planner.buffer_line(startCoord, fr_mm_s, 0);
+  planner.synchronize();
 
   // if the module isn't currently trusted, wait until it is (or until it should be if things are working)
   if (!trusted) {
@@ -348,7 +357,7 @@ bool I2CPositionEncoder::test_axis() {
   }
 
   if (trusted) { // if trusted, commence test
-    TERN_(HAS_EXTRUDERS, endCoord.e = planner.get_axis_position_mm(E_AXIS));
+    endCoord.e = planner.get_axis_position_mm(E_AXIS);
     planner.buffer_line(endCoord, fr_mm_s, 0);
     planner.synchronize();
   }
@@ -383,7 +392,7 @@ void I2CPositionEncoder::calibrate_steps_mm(const uint8_t iter) {
   travelDistance = endDistance - startDistance;
 
   xyze_pos_t startCoord, endCoord;
-  LOOP_NUM_AXES(a) {
+  LOOP_XYZ(a) {
     startCoord[a] = planner.get_axis_position_mm((AxisEnum)a);
     endCoord[a] = planner.get_axis_position_mm((AxisEnum)a);
   }
@@ -392,8 +401,8 @@ void I2CPositionEncoder::calibrate_steps_mm(const uint8_t iter) {
 
   planner.synchronize();
 
-  for (uint8_t i = 0; i < iter; ++i) {
-    TERN_(HAS_EXTRUDERS, startCoord.e = planner.get_axis_position_mm(E_AXIS));
+  LOOP_L_N(i, iter) {
+    startCoord.e = planner.get_axis_position_mm(E_AXIS);
     planner.buffer_line(startCoord, fr_mm_s, 0);
     planner.synchronize();
 
@@ -402,7 +411,7 @@ void I2CPositionEncoder::calibrate_steps_mm(const uint8_t iter) {
 
     //do_blocking_move_to(endCoord);
 
-    TERN_(HAS_EXTRUDERS, endCoord.e = planner.get_axis_position_mm(E_AXIS));
+    endCoord.e = planner.get_axis_position_mm(E_AXIS);
     planner.buffer_line(endCoord, fr_mm_s, 0);
     planner.synchronize();
 
@@ -412,23 +421,23 @@ void I2CPositionEncoder::calibrate_steps_mm(const uint8_t iter) {
 
     travelledDistance = mm_from_count(ABS(stopCount - startCount));
 
-    SERIAL_ECHOLNPGM("Attempted travel: ", travelDistance, "mm");
-    SERIAL_ECHOLNPGM("   Actual travel: ", travelledDistance, "mm");
+    SERIAL_ECHOLNPAIR("Attempted travel: ", travelDistance, "mm");
+    SERIAL_ECHOLNPAIR("   Actual travel:  ", travelledDistance, "mm");
 
-    // Calculate new axis steps per unit
+    //Calculate new axis steps per unit
     old_steps_mm = planner.settings.axis_steps_per_mm[encoderAxis];
     new_steps_mm = (old_steps_mm * travelDistance) / travelledDistance;
 
-    SERIAL_ECHOLNPGM("Old steps/mm: ", old_steps_mm);
-    SERIAL_ECHOLNPGM("New steps/mm: ", new_steps_mm);
+    SERIAL_ECHOLNPAIR("Old steps/mm: ", old_steps_mm);
+    SERIAL_ECHOLNPAIR("New steps/mm: ", new_steps_mm);
 
-    // Save new value
+    //Save new value
     planner.settings.axis_steps_per_mm[encoderAxis] = new_steps_mm;
 
     if (iter > 1) {
       total += new_steps_mm;
 
-      // Swap start and end points so next loop runs from current position
+      // swap start and end points so next loop runs from current position
       const float tempCoord = startCoord[encoderAxis];
       startCoord[encoderAxis] = endCoord[encoderAxis];
       endCoord[encoderAxis] = tempCoord;
@@ -437,7 +446,7 @@ void I2CPositionEncoder::calibrate_steps_mm(const uint8_t iter) {
 
   if (iter > 1) {
     total /= (float)iter;
-    SERIAL_ECHOLNPGM("Average steps/mm: ", total);
+    SERIAL_ECHOLNPAIR("Average steps/mm: ", total);
   }
 
   ec = oldec;
@@ -452,6 +461,7 @@ void I2CPositionEncoder::reset() {
 
   TERN_(I2CPE_ERR_ROLLING_AVERAGE, ZERO(err));
 }
+
 
 bool I2CPositionEncodersMgr::I2CPE_anyaxis;
 uint8_t I2CPositionEncodersMgr::I2CPE_addr,
@@ -476,7 +486,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_1_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_1_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_1_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_1_INVERT);
     #endif
     #ifdef I2CPE_ENC_1_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_1_EC_METHOD);
@@ -487,7 +497,9 @@ void I2CPositionEncodersMgr::init() {
 
     encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_1_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_1_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 
   #if I2CPE_ENCODER_CNT > 1
@@ -505,7 +517,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_2_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_2_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_2_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_2_INVERT);
     #endif
     #ifdef I2CPE_ENC_2_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_2_EC_METHOD);
@@ -516,7 +528,9 @@ void I2CPositionEncodersMgr::init() {
 
     encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_2_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_2_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 
   #if I2CPE_ENCODER_CNT > 2
@@ -534,7 +548,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_3_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_3_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_3_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_3_INVERT);
     #endif
     #ifdef I2CPE_ENC_3_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_3_EC_METHOD);
@@ -543,9 +557,11 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_ec_threshold(I2CPE_ENC_3_EC_THRESH);
     #endif
 
-    encoders[i].set_active(encoders[i].passes_test(true));
+  encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_3_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_3_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 
   #if I2CPE_ENCODER_CNT > 3
@@ -563,7 +579,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_4_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_4_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_4_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_4_INVERT);
     #endif
     #ifdef I2CPE_ENC_4_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_4_EC_METHOD);
@@ -574,7 +590,9 @@ void I2CPositionEncodersMgr::init() {
 
     encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_4_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_4_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 
   #if I2CPE_ENCODER_CNT > 4
@@ -592,7 +610,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_5_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_5_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_5_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_5_INVERT);
     #endif
     #ifdef I2CPE_ENC_5_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_5_EC_METHOD);
@@ -603,7 +621,9 @@ void I2CPositionEncodersMgr::init() {
 
     encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_5_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_5_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 
   #if I2CPE_ENCODER_CNT > 5
@@ -621,7 +641,7 @@ void I2CPositionEncodersMgr::init() {
       encoders[i].set_stepper_ticks(I2CPE_ENC_6_TICKS_REV);
     #endif
     #ifdef I2CPE_ENC_6_INVERT
-      encoders[i].set_inverted(ENABLED(I2CPE_ENC_6_INVERT));
+      encoders[i].set_inverted(I2CPE_ENC_6_INVERT);
     #endif
     #ifdef I2CPE_ENC_6_EC_METHOD
       encoders[i].set_ec_method(I2CPE_ENC_6_EC_METHOD);
@@ -632,47 +652,50 @@ void I2CPositionEncodersMgr::init() {
 
     encoders[i].set_active(encoders[i].passes_test(true));
 
-    TERN_(HAS_EXTRUDERS, if (I2CPE_ENC_6_AXIS == E_AXIS) encoders[i].set_homed());
+    #if I2CPE_ENC_6_AXIS == E_AXIS
+      encoders[i].set_homed();
+    #endif
   #endif
 }
 
 void I2CPositionEncodersMgr::report_position(const int8_t idx, const bool units, const bool noOffset) {
   CHECK_IDX();
 
-  if (units) {
+  if (units)
     SERIAL_ECHOLN(noOffset ? encoders[idx].mm_from_count(encoders[idx].get_raw_count()) : encoders[idx].get_position_mm());
-    return;
+  else {
+    if (noOffset) {
+      const int32_t raw_count = encoders[idx].get_raw_count();
+      SERIAL_CHAR(axis_codes[encoders[idx].get_axis()], ' ');
+
+      for (uint8_t j = 31; j > 0; j--)
+        SERIAL_ECHO((bool)(0x00000001 & (raw_count >> j)));
+
+      SERIAL_ECHO((bool)(0x00000001 & raw_count));
+      SERIAL_CHAR(' ');
+      SERIAL_ECHOLN(raw_count);
+    }
+    else
+      SERIAL_ECHOLN(encoders[idx].get_position());
   }
-
-  if (noOffset) {
-    const int32_t raw_count = encoders[idx].get_raw_count();
-    SERIAL_CHAR(AXIS_CHAR(encoders[idx].get_axis()), ' ');
-
-    for (uint8_t j = 31; j >= 0; j--)
-      SERIAL_ECHO(TEST32(raw_count, j));
-
-    SERIAL_ECHOLN(C(' '), raw_count);
-  }
-  else
-    SERIAL_ECHOLN(encoders[idx].get_position());
 }
 
 void I2CPositionEncodersMgr::change_module_address(const uint8_t oldaddr, const uint8_t newaddr) {
   // First check 'new' address is not in use
   Wire.beginTransmission(I2C_ADDRESS(newaddr));
   if (!Wire.endTransmission()) {
-    SERIAL_ECHOLNPGM("?There is already a device with that address on the I2C bus! (", newaddr, ")");
+    SERIAL_ECHOLNPAIR("?There is already a device with that address on the I2C bus! (", newaddr, ")");
     return;
   }
 
   // Now check that we can find the module on the oldaddr address
   Wire.beginTransmission(I2C_ADDRESS(oldaddr));
   if (Wire.endTransmission()) {
-    SERIAL_ECHOLNPGM("?No module detected at this address! (", oldaddr, ")");
+    SERIAL_ECHOLNPAIR("?No module detected at this address! (", oldaddr, ")");
     return;
   }
 
-  SERIAL_ECHOLNPGM("Module found at ", oldaddr, ", changing address to ", newaddr);
+  SERIAL_ECHOLNPAIR("Module found at ", oldaddr, ", changing address to ", newaddr);
 
   // Change the modules address
   Wire.beginTransmission(I2C_ADDRESS(oldaddr));
@@ -698,7 +721,7 @@ void I2CPositionEncodersMgr::change_module_address(const uint8_t oldaddr, const 
   // and enable it (it will likely have failed initialization on power-up, before the address change).
   const int8_t idx = idx_from_addr(newaddr);
   if (idx >= 0 && !encoders[idx].get_active()) {
-    SERIAL_CHAR(AXIS_CHAR(encoders[idx].get_axis()));
+    SERIAL_CHAR(axis_codes[encoders[idx].get_axis()]);
     SERIAL_ECHOLNPGM(" axis encoder was not detected on printer startup. Trying again.");
     encoders[idx].set_active(encoders[idx].passes_test(true));
   }
@@ -708,11 +731,11 @@ void I2CPositionEncodersMgr::report_module_firmware(const uint8_t address) {
   // First check there is a module
   Wire.beginTransmission(I2C_ADDRESS(address));
   if (Wire.endTransmission()) {
-    SERIAL_ECHOLNPGM("?No module detected at this address! (", address, ")");
+    SERIAL_ECHOLNPAIR("?No module detected at this address! (", address, ")");
     return;
   }
 
-  SERIAL_ECHOLNPGM("Requesting version info from module at address ", address, ":");
+  SERIAL_ECHOLNPAIR("Requesting version info from module at address ", address, ":");
 
   Wire.beginTransmission(I2C_ADDRESS(address));
   Wire.write(I2CPE_SET_REPORT_MODE);
@@ -742,7 +765,7 @@ int8_t I2CPositionEncodersMgr::parse() {
     if (!parser.has_value()) {
       SERIAL_ECHOLNPGM("?A seen, but no address specified! [30-200]");
       return I2CPE_PARSE_ERR;
-    }
+    };
 
     I2CPE_addr = parser.value_byte();
     if (!WITHIN(I2CPE_addr, 30, 200)) { // reserve the first 30 and last 55
@@ -759,13 +782,13 @@ int8_t I2CPositionEncodersMgr::parse() {
   else if (parser.seenval('I')) {
 
     if (!parser.has_value()) {
-      SERIAL_ECHOLNPGM("?I seen, but no index specified! [0-", I2CPE_ENCODER_CNT - 1, "]");
+      SERIAL_ECHOLNPAIR("?I seen, but no index specified! [0-", I2CPE_ENCODER_CNT - 1, "]");
       return I2CPE_PARSE_ERR;
-    }
+    };
 
     I2CPE_idx = parser.value_byte();
     if (I2CPE_idx >= I2CPE_ENCODER_CNT) {
-      SERIAL_ECHOLNPGM("?Index out of range. [0-", I2CPE_ENCODER_CNT - 1, "]");
+      SERIAL_ECHOLNPAIR("?Index out of range. [0-", I2CPE_ENCODER_CNT - 1, "]");
       return I2CPE_PARSE_ERR;
     }
 
@@ -777,7 +800,7 @@ int8_t I2CPositionEncodersMgr::parse() {
   I2CPE_anyaxis = parser.seen_axis();
 
   return I2CPE_PARSE_OK;
-}
+};
 
 /**
  * M860:  Report the position(s) of position encoder module(s).
@@ -796,12 +819,12 @@ int8_t I2CPositionEncodersMgr::parse() {
 void I2CPositionEncodersMgr::M860() {
   if (parse()) return;
 
-  const bool hasU = parser.seen_test('U'), hasO = parser.seen_test('O');
+  const bool hasU = parser.seen('U'), hasO = parser.seen('O');
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen_test(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) report_position(idx, hasU, hasO);
       }
     }
@@ -826,9 +849,9 @@ void I2CPositionEncodersMgr::M861() {
   if (parse()) return;
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) report_status(idx);
       }
     }
@@ -854,9 +877,9 @@ void I2CPositionEncodersMgr::M862() {
   if (parse()) return;
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) test_axis(idx);
       }
     }
@@ -885,9 +908,9 @@ void I2CPositionEncodersMgr::M863() {
   const uint8_t iterations = constrain(parser.byteval('P', 1), 1, 10);
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) calibrate_steps_mm(idx, iterations);
       }
     }
@@ -920,7 +943,7 @@ void I2CPositionEncodersMgr::M864() {
     if (!parser.has_value()) {
       SERIAL_ECHOLNPGM("?S seen, but no address specified! [30-200]");
       return;
-    }
+    };
 
     newAddress = parser.value_byte();
     if (!WITHIN(newAddress, 30, 200)) {
@@ -933,14 +956,14 @@ void I2CPositionEncodersMgr::M864() {
     return;
   }
   else {
-         if (parser.seen_test('X')) newAddress = I2CPE_PRESET_ADDR_X;
-    else if (parser.seen_test('Y')) newAddress = I2CPE_PRESET_ADDR_Y;
-    else if (parser.seen_test('Z')) newAddress = I2CPE_PRESET_ADDR_Z;
-    else if (parser.seen_test('E')) newAddress = I2CPE_PRESET_ADDR_E;
+         if (parser.seen('X')) newAddress = I2CPE_PRESET_ADDR_X;
+    else if (parser.seen('Y')) newAddress = I2CPE_PRESET_ADDR_Y;
+    else if (parser.seen('Z')) newAddress = I2CPE_PRESET_ADDR_Z;
+    else if (parser.seen('E')) newAddress = I2CPE_PRESET_ADDR_E;
     else return;
   }
 
-  SERIAL_ECHOLNPGM("Changing module at address ", I2CPE_addr, " to address ", newAddress);
+  SERIAL_ECHOLNPAIR("Changing module at address ", I2CPE_addr, " to address ", newAddress);
 
   change_module_address(I2CPE_addr, newAddress);
 }
@@ -961,9 +984,9 @@ void I2CPositionEncodersMgr::M865() {
   if (parse()) return;
 
   if (!I2CPE_addr) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) report_module_firmware(encoders[idx].get_address());
       }
     }
@@ -989,17 +1012,17 @@ void I2CPositionEncodersMgr::M865() {
 void I2CPositionEncodersMgr::M866() {
   if (parse()) return;
 
-  const bool hasR = parser.seen_test('R');
+  const bool hasR = parser.seen('R');
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) {
           if (hasR)
-            reset_error_count(idx, (AxisEnum)i);
+            reset_error_count(idx, AxisEnum(i));
           else
-            report_error_count(idx, (AxisEnum)i);
+            report_error_count(idx, AxisEnum(i));
         }
       }
     }
@@ -1030,12 +1053,12 @@ void I2CPositionEncodersMgr::M867() {
   const int8_t onoff = parser.seenval('S') ? parser.value_int() : -1;
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) {
           const bool ena = onoff == -1 ? !encoders[I2CPE_idx].get_ec_enabled() : !!onoff;
-          enable_ec(idx, ena, (AxisEnum)i);
+          enable_ec(idx, ena, AxisEnum(i));
         }
       }
     }
@@ -1066,9 +1089,9 @@ void I2CPositionEncodersMgr::M868() {
   const float newThreshold = parser.seenval('T') ? parser.value_float() : -9999;
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) {
           if (newThreshold != -9999)
             set_ec_threshold(idx, newThreshold, encoders[idx].get_axis());
@@ -1100,9 +1123,9 @@ void I2CPositionEncodersMgr::M869() {
   if (parse()) return;
 
   if (I2CPE_idx == 0xFF) {
-    LOOP_LOGICAL_AXES(i) {
-      if (!I2CPE_anyaxis || parser.seen(AXIS_CHAR(i))) {
-        const uint8_t idx = idx_from_axis((AxisEnum)i);
+    LOOP_XYZE(i) {
+      if (!I2CPE_anyaxis || parser.seen(axis_codes[i])) {
+        const uint8_t idx = idx_from_axis(AxisEnum(i));
         if ((int8_t)idx >= 0) report_error(idx);
       }
     }

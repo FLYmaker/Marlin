@@ -51,9 +51,9 @@
 //#define BOGUS_TEMPERATURE_GRACE_PERIOD    2000
 
 // Enable EEPROM Emulation for this board as it doesn't have EEPROM
-#if ANY(NO_EEPROM_SELECTED, FLASH_EEPROM_EMULATION)
+#if EITHER(NO_EEPROM_SELECTED, FLASH_EEPROM_EMULATION)
   #define FLASH_EEPROM_EMULATION
-  #define MARLIN_EEPROM_SIZE             0x1000U  // 4K
+  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
 #endif
 
 //
@@ -110,7 +110,7 @@
 //
 // These are FAN PWM pins on EXT0..EXT2 connectors.
 //
-//#define FAN0_PIN                          PB9   // EXT0 port
+//#define FAN_PIN                           PB9   // EXT0 port
 #define FAN1_PIN                            PB8   // EXT1 port
 #define FAN2_PIN                            PB7   // EXT2 port
 
@@ -134,7 +134,6 @@
 //
 // LCD / Controller
 //
-
 #if HAS_WIRED_LCD
 
   #if IS_RRD_SC
@@ -144,7 +143,7 @@
     // RepRapDiscount Smart Controller, but adds an FFC40 connector
     //
     #define LCD_PINS_RS                     PE6   // CS chip select /SS chip slave select
-    #define LCD_PINS_EN                     PE14  // SID (MOSI)
+    #define LCD_PINS_ENABLE                 PE14  // SID (MOSI)
     #define LCD_PINS_D4                     PD8   // SCK (CLK) clock
     #define LCD_PINS_D5                     PD9
     #define LCD_PINS_D6                     PD10
@@ -158,11 +157,16 @@
     //#define LCD_UART_RX                   PD9
   #endif
 
-  // Alter timing for graphical display
-  #if IS_U8GLIB_ST7920
-    #define BOARD_ST7920_DELAY_1              96
-    #define BOARD_ST7920_DELAY_2              48
-    #define BOARD_ST7920_DELAY_3             715
+  #if HAS_MARLINUI_U8GLIB
+    #ifndef BOARD_ST7920_DELAY_1
+      #define BOARD_ST7920_DELAY_1 DELAY_NS(96)
+    #endif
+    #ifndef BOARD_ST7920_DELAY_2
+      #define BOARD_ST7920_DELAY_2 DELAY_NS(48)
+    #endif
+    #ifndef BOARD_ST7920_DELAY_3
+      #define BOARD_ST7920_DELAY_3 DELAY_NS(715)
+    #endif
   #endif
 
 #endif // HAS_WIRED_LCD
@@ -187,7 +191,7 @@
 #ifdef GTM32_PRO_VB_USE_LCD_BEEPER
   // This is pin 32 on J2 FFC40 and pin, goes to the beeper
   // on Geeetech's version of RepRapDiscount Smart Controller
-  // (e.g., on Rostock 301)
+  // (e.g. on Rostock 301)
   #define BEEPER_PIN                        PE12
 #else
   // This is the beeper on the board itself
@@ -225,11 +229,12 @@
   #define SD_DETECT_PIN                     -1    // Card detect is not connected
 #endif
 
-#if ENABLED(WIFISUPPORT)
-  //
-  // ESP WiFi can be soldered to J9 connector which is wired to USART2.
-  //
-  #define ESP_WIFI_MODULE_COM                  2
-  #define ESP_WIFI_MODULE_BAUDRATE        115200
-  #define ESP_WIFI_MODULE_RESET_PIN         -1
-#endif
+#define SDSS                           SD_SS_PIN
+
+//
+// ESP WiFi can be soldered to J9 connector which is wired to USART2.
+// Must define WIFISUPPORT in Configuration.h for the printer.
+//
+#define ESP_WIFI_MODULE_COM                    2
+#define ESP_WIFI_MODULE_BAUDRATE          115200
+#define ESP_WIFI_MODULE_RESET_PIN           -1

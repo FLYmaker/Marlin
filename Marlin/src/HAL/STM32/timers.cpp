@@ -1,9 +1,9 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
- * Based on Sprinter and grbl.
- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +19,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#include "../platforms.h"
-
-#ifdef HAL_STM32
+#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
 
 #include "../../inc/MarlinConfig.h"
 
@@ -67,18 +65,22 @@
   #endif
 #endif
 
-#if defined(STM32F0xx) || defined(STM32G0xx)
+#ifdef STM32F0xx
   #define MCU_STEP_TIMER 16
   #define MCU_TEMP_TIMER 17
 #elif defined(STM32F1xx)
   #define MCU_STEP_TIMER  4
   #define MCU_TEMP_TIMER  2
 #elif defined(STM32F401xC) || defined(STM32F401xE)
-  #define MCU_STEP_TIMER  9           // STM32F401 has no TIM6, TIM7, or TIM8
+  #define MCU_STEP_TIMER  9
   #define MCU_TEMP_TIMER 10
 #elif defined(STM32F4xx) || defined(STM32F7xx) || defined(STM32H7xx)
-  #define MCU_STEP_TIMER  6
+  #define MCU_STEP_TIMER  6           // STM32F401 has no TIM6, TIM7, or TIM8
   #define MCU_TEMP_TIMER 14           // TIM7 is consumed by Software Serial if used.
+#endif
+
+#ifndef HAL_TIMER_RATE
+  #define HAL_TIMER_RATE GetStepperTimerClkFreq()
 #endif
 
 #ifndef STEP_TIMER
@@ -93,15 +95,9 @@
 #define STEP_TIMER_DEV _TIMER_DEV(STEP_TIMER)
 #define TEMP_TIMER_DEV _TIMER_DEV(TEMP_TIMER)
 
-// --------------------------------------------------------------------------
-// Local defines
-// --------------------------------------------------------------------------
-
-#define NUM_HARDWARE_TIMERS 2
-
-// --------------------------------------------------------------------------
+// ------------------------
 // Private Variables
-// --------------------------------------------------------------------------
+// ------------------------
 
 HardwareTimer *timer_instance[NUM_HARDWARE_TIMERS] = { nullptr };
 
@@ -112,7 +108,7 @@ HardwareTimer *timer_instance[NUM_HARDWARE_TIMERS] = { nullptr };
 uint32_t GetStepperTimerClkFreq() {
   // Timer input clocks vary between devices, and in some cases between timers on the same device.
   // Retrieve at runtime to ensure device compatibility. Cache result to avoid repeated overhead.
-  static uint32_t clkfreq = timer_instance[MF_TIMER_STEP]->getTimerClkFreq();
+  static uint32_t clkfreq = timer_instance[STEP_TIMER_NUM]->getTimerClkFreq();
   return clkfreq;
 }
 
@@ -120,7 +116,7 @@ uint32_t GetStepperTimerClkFreq() {
 void HAL_timer_start(const uint8_t timer_num, const uint32_t frequency) {
   if (!HAL_timer_initialized(timer_num)) {
     switch (timer_num) {
-      case MF_TIMER_STEP: // STEPPER TIMER - use a 32bit timer if possible
+      case STEP_TIMER_NUM: // STEPPER TIMER - use a 32bit timer if possible
         timer_instance[timer_num] = new HardwareTimer(STEP_TIMER_DEV);
         /* Set the prescaler to the final desired value.
          * This will change the effective ISR callback frequency but when
@@ -137,9 +133,9 @@ void HAL_timer_start(const uint8_t timer_num, const uint32_t frequency) {
          */
 
         timer_instance[timer_num]->setPrescaleFactor(STEPPER_TIMER_PRESCALE); //the -1 is done internally
-        timer_instance[timer_num]->setOverflow(_MIN(HAL_TIMER_TYPE_MAX, hal_timer_t((HAL_TIMER_RATE) / (STEPPER_TIMER_PRESCALE) /* / frequency */)), TICK_FORMAT);
+        timer_instance[timer_num]->setOverflow(_MIN(hal_timer_t(HAL_TIMER_TYPE_MAX), (HAL_TIMER_RATE) / (STEPPER_TIMER_PRESCALE) /* /frequency */), TICK_FORMAT);
         break;
-      case MF_TIMER_TEMP: // TEMP TIMER - any available 16bit timer
+      case TEMP_TIMER_NUM: // TEMP TIMER - any available 16bit timer
         timer_instance[timer_num] = new HardwareTimer(TEMP_TIMER_DEV);
         // The prescale factor is computed automatically for HERTZ_FORMAT
         timer_instance[timer_num]->setOverflow(frequency, HERTZ_FORMAT);
@@ -159,10 +155,10 @@ void HAL_timer_start(const uint8_t timer_num, const uint32_t frequency) {
     // These calls can be removed and replaced with
     // timer_instance[timer_num]->setInterruptPriority
     switch (timer_num) {
-      case MF_TIMER_STEP:
+      case STEP_TIMER_NUM:
         timer_instance[timer_num]->setInterruptPriority(STEP_TIMER_IRQ_PRIO, 0);
         break;
-      case MF_TIMER_TEMP:
+      case TEMP_TIMER_NUM:
         timer_instance[timer_num]->setInterruptPriority(TEMP_TIMER_IRQ_PRIO, 0);
         break;
     }
@@ -172,10 +168,10 @@ void HAL_timer_start(const uint8_t timer_num, const uint32_t frequency) {
 void HAL_timer_enable_interrupt(const uint8_t timer_num) {
   if (HAL_timer_initialized(timer_num) && !timer_instance[timer_num]->hasInterrupt()) {
     switch (timer_num) {
-      case MF_TIMER_STEP:
+      case STEP_TIMER_NUM:
         timer_instance[timer_num]->attachInterrupt(Step_Handler);
         break;
-      case MF_TIMER_TEMP:
+      case TEMP_TIMER_NUM:
         timer_instance[timer_num]->attachInterrupt(Temp_Handler);
         break;
     }
@@ -288,9 +284,9 @@ static constexpr int get_timer_num_from_base_address(uintptr_t base_address) {
 // constexpr doesn't like using the base address pointers that timers evaluate to.
 // We can get away with casting them to uintptr_t, if we do so inside an array.
 // GCC will not currently do it directly to a uintptr_t.
-TERN_(HAS_TMC_SW_SERIAL, static constexpr uintptr_t timer_serial[] = {uintptr_t(TIMER_SERIAL)});
-TERN_(SPEAKER,           static constexpr uintptr_t timer_tone[]   = {uintptr_t(TIMER_TONE)});
-TERN_(HAS_SERVOS,        static constexpr uintptr_t timer_servo[]  = {uintptr_t(TIMER_SERVO)});
+IF_ENABLED(HAS_TMC_SW_SERIAL, static constexpr uintptr_t timer_serial[] = {uintptr_t(TIMER_SERIAL)});
+IF_ENABLED(SPEAKER,           static constexpr uintptr_t timer_tone[]   = {uintptr_t(TIMER_TONE)});
+IF_ENABLED(HAS_SERVOS,        static constexpr uintptr_t timer_servo[]  = {uintptr_t(TIMER_SERVO)});
 
 enum TimerPurpose { TP_SERIAL, TP_TONE, TP_SERVO, TP_STEP, TP_TEMP };
 
@@ -299,21 +295,21 @@ enum TimerPurpose { TP_SERIAL, TP_TONE, TP_SERVO, TP_STEP, TP_TEMP };
 // This cannot yet account for timers used for PWM output, such as for fans.
 static constexpr struct { TimerPurpose p; int t; } timers_in_use[] = {
   #if HAS_TMC_SW_SERIAL
-    { TP_SERIAL, get_timer_num_from_base_address(timer_serial[0]) }, // Set in variant.h, or as a define in platformio.h if not present in variant.h
+    {TP_SERIAL, get_timer_num_from_base_address(timer_serial[0])},  // Set in variant.h, or as a define in platformio.h if not present in variant.h
   #endif
   #if ENABLED(SPEAKER)
-    { TP_TONE, get_timer_num_from_base_address(timer_tone[0]) },     // Set in variant.h, or as a define in platformio.h if not present in variant.h
+    {TP_TONE, get_timer_num_from_base_address(timer_tone[0])},    // Set in variant.h, or as a define in platformio.h if not present in variant.h
   #endif
   #if HAS_SERVOS
-    { TP_SERVO, get_timer_num_from_base_address(timer_servo[0]) },   // Set in variant.h, or as a define in platformio.h if not present in variant.h
+    {TP_SERVO, get_timer_num_from_base_address(timer_servo[0])},   // Set in variant.h, or as a define in platformio.h if not present in variant.h
   #endif
-  { TP_STEP, STEP_TIMER },
-  { TP_TEMP, TEMP_TIMER },
+  {TP_STEP, STEP_TIMER},
+  {TP_TEMP, TEMP_TIMER},
 };
 
 static constexpr bool verify_no_timer_conflicts() {
-  for (uint8_t i = 0; i < COUNT(timers_in_use); ++i)
-    for (uint8_t j = i + 1; j < COUNT(timers_in_use); ++j)
+  LOOP_L_N(i, COUNT(timers_in_use))
+    LOOP_S_L_N(j, i + 1, COUNT(timers_in_use))
       if (timers_in_use[i].t == timers_in_use[j].t) return false;
   return true;
 }
@@ -323,4 +319,4 @@ static constexpr bool verify_no_timer_conflicts() {
 // when hovering over it, making it easy to identify the conflicting timers.
 static_assert(verify_no_timer_conflicts(), "One or more timer conflict detected. Examine \"timers_in_use\" to help identify conflict.");
 
-#endif // HAL_STM32
+#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC

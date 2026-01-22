@@ -39,7 +39,6 @@
 
 /**
  * Rambo pin assignments
- * Schematic (1.1b): https://www.reprap.org/wiki/File:Rambo1-1-schematic.png
  */
 
 #include "env_validate.h"
@@ -139,8 +138,8 @@
 #define HEATER_2_PIN                           6
 #define HEATER_BED_PIN                         3
 
-#ifndef FAN0_PIN
-  #define FAN0_PIN                             8
+#ifndef FAN_PIN
+  #define FAN_PIN                              8
 #endif
 #ifndef FAN1_PIN
   #define FAN1_PIN                             6
@@ -152,7 +151,7 @@
 //
 // Misc. Functions
 //
-#define SD_SS_PIN                             53
+#define SDSS                                  53
 #define LED_PIN                               13
 #define PS_ON_PIN                              4
 
@@ -167,17 +166,15 @@
 //
 // M3/M4/M5 - Spindle/Laser Control
 //
-#if HAS_CUTTER
-  #define SPINDLE_LASER_PWM_PIN               45  // Hardware PWM
-  #define SPINDLE_LASER_ENA_PIN               31  // Pullup!
-  #define SPINDLE_DIR_PIN                     32
-#endif
+#define SPINDLE_LASER_PWM_PIN                 45  // Hardware PWM
+#define SPINDLE_LASER_ENA_PIN                 31  // Pullup!
+#define SPINDLE_DIR_PIN                       32
 
 //
-// SPI for MAX Thermocouple
+// SPI for Max6675 or Max31855 Thermocouple
 //
-#ifndef TEMP_0_CS_PIN
-  #define TEMP_0_CS_PIN                       32  // SPINDLE_DIR_PIN / STAT_LED_BLUE_PIN
+#ifndef MAX6675_SS_PIN
+  #define MAX6675_SS_PIN                      32  // SPINDLE_DIR_PIN / STAT_LED_BLUE_PIN
 #endif
 
 //
@@ -189,16 +186,13 @@
 //
 // Průša i3 MK2 Multiplexer Support
 //
-#if HAS_PRUSA_MMU1
-  #define E_MUX0_PIN                          17
-  #define E_MUX1_PIN                          16
-  #define E_MUX2_PIN                          84  // 84 in MK2 Firmware
-#endif
+#define E_MUX0_PIN                            17
+#define E_MUX1_PIN                            16
+#define E_MUX2_PIN                            84  // 84 in MK2 Firmware
 
 //
 // LCD / Controller
 //
-
 #if HAS_WIRED_LCD || TOUCH_UI_ULTIPANEL
 
   #define KILL_PIN                            80
@@ -206,7 +200,7 @@
   #if IS_ULTIPANEL || TOUCH_UI_ULTIPANEL
 
     #define LCD_PINS_RS                       70
-    #define LCD_PINS_EN                       71
+    #define LCD_PINS_ENABLE                   71
     #define LCD_PINS_D4                       72
     #define LCD_PINS_D5                       73
     #define LCD_PINS_D6                       74
@@ -220,6 +214,7 @@
 
       #define DOGLCD_A0                       70
       #define DOGLCD_CS                       71
+      #define LCD_SCREEN_ROT_180
 
       #define BTN_EN1                         85
       #define BTN_EN2                         84
@@ -230,9 +225,7 @@
       #define STAT_LED_RED_PIN                22
       #define STAT_LED_BLUE_PIN               32
 
-      #define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
-
-    #else // !VIKI2 && !miniVIKI
+    #else                                         // !VIKI2 && !miniVIKI
 
       #define BEEPER_PIN                      79  // AUX-4
 
@@ -253,7 +246,7 @@
       #define BTN_ENC_EN             LCD_PINS_D7  // Detect the presence of the encoder
     #endif
 
-  #else // !IS_NEWPANEL - old style panel with shift register
+  #else                                           // !IS_NEWPANEL - old style panel with shift register
 
     // No Beeper added
     #define BEEPER_PIN                        33
@@ -266,7 +259,7 @@
     //#define SHIFT_EN_PIN                    17
 
     #define LCD_PINS_RS                       75
-    #define LCD_PINS_EN                       17
+    #define LCD_PINS_ENABLE                   17
     #define LCD_PINS_D4                       23
     #define LCD_PINS_D5                       25
     #define LCD_PINS_D6                       27
@@ -275,10 +268,3 @@
   #endif // !IS_NEWPANEL
 
 #endif // HAS_WIRED_LCD
-
-// Alter timing for graphical display
-#if IS_U8GLIB_ST7920
-  #define BOARD_ST7920_DELAY_1                 0
-  #define BOARD_ST7920_DELAY_2                 0
-  #define BOARD_ST7920_DELAY_3                 0
-#endif

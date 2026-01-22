@@ -22,12 +22,13 @@
 #pragma once
 
 #include "../../../inc/MarlinConfigPre.h"
+#include "../../dogm/marlinui_DOGM.h"
+#include "../../lcdprint.h"
 #include "../../marlinui.h"
-#include "types.h"
 
 //#define MUTE_GAMES
 
-#if ENABLED(MUTE_GAMES) || !HAS_SOUND
+#if ENABLED(MUTE_GAMES) || !HAS_BUZZER
   #define _BUZZ(D,F) NOOP
 #else
   #define _BUZZ(D,F) BUZZ(D,F)

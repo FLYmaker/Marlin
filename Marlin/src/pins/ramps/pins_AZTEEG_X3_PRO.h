@@ -23,15 +23,13 @@
 
 /**
  * AZTEEG_X3_PRO (Arduino Mega) pin assignments
- * Schematic: http://files.panucatt.com/datasheets/x3pro_sch_v1.0.zip
- * ATmega2560
  */
 
 #define REQUIRE_MEGA2560
 #include "env_validate.h"
 
 #if HOTENDS > 5 || E_STEPPERS > 5
-  #error "Azteeg X3 Pro supports up to 5 hotends / E steppers."
+  #error "Azteeg X3 Pro supports up to 5 hotends / E-steppers. Comment out this line to continue."
 #endif
 
 #define BOARD_INFO_NAME "Azteeg X3 Pro"
@@ -55,8 +53,8 @@
 #define Y_STOP_PIN                            14
 #define Z_STOP_PIN                            18
 
-#ifndef FAN0_PIN
-  #define FAN0_PIN                             6
+#ifndef FAN_PIN
+  #define FAN_PIN                              6
 #endif
 
 #if ENABLED(CASE_LIGHT_ENABLE) && !PIN_EXISTS(CASE_LIGHT)
@@ -160,7 +158,7 @@
 #if ENABLED(CASE_LIGHT_ENABLE) && PIN_EXISTS(CASE_LIGHT) && defined(DOGLCD_A0) && DOGLCD_A0 == CASE_LIGHT_PIN
   #undef DOGLCD_A0                                // Steal pin 44 for the case light; if you have a Viki2 and have connected it
   #define DOGLCD_A0                           57  // following the Panucatt wiring diagram, you may need to tweak these pin assignments
-                                                  // as the wiring diagram uses pin 44 for DOGLCD_A0.
+                                // as the wiring diagram uses pin 44 for DOGLCD_A0
 #endif
 
 //

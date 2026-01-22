@@ -21,12 +21,11 @@
  */
 #ifdef __MK20DX256__
 
-#include "../../inc/MarlinConfig.h"
 #include "HAL.h"
-
 #include <SPI.h>
 #include <pins_arduino.h>
 #include "spi_pins.h"
+#include "../../core/macros.h"
 
 static SPISettings spiConfig;
 
@@ -36,9 +35,10 @@ static SPISettings spiConfig;
 
 // Initialize SPI bus
 void spiBegin() {
-  #if PIN_EXISTS(SD_SS)
-    OUT_WRITE(SD_SS_PIN, HIGH);
+  #if !PIN_EXISTS(SD_SS)
+    #error "SD_SS_PIN not defined!"
   #endif
+  OUT_WRITE(SD_SS_PIN, HIGH);
   SET_OUTPUT(SD_SCK_PIN);
   SET_INPUT(SD_MISO_PIN);
   SET_OUTPUT(SD_MOSI_PIN);
@@ -64,7 +64,7 @@ void spiInit(uint8_t spiRate) {
     case SPI_EIGHTH_SPEED:  clock =  1250000; break;
     case SPI_SPEED_5:       clock =   625000; break;
     case SPI_SPEED_6:       clock =   312500; break;
-    default:                clock = 4000000; // Default from the SPI library
+    default:                clock = 4000000; // Default from the SPI libarary
   }
   spiConfig = SPISettings(clock, MSBFIRST, SPI_MODE0);
   SPI.begin();
@@ -119,6 +119,7 @@ void spiSendBlock(uint8_t token, const uint8_t *buf) {
   while (!TEST(SPSR, SPIF)) { /* nada */ };
   SPI.endTransaction();
 }
+
 
 // Begin SPI transaction, set clock, bit order, data mode
 void spiBeginTransaction(uint32_t spiClock, uint8_t bitOrder, uint8_t dataMode) {

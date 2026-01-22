@@ -1,9 +1,10 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
- * Based on Sprinter and grbl.
- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+ * Copyright (c) 2017 Victor Perez
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,17 +20,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#include "../platforms.h"
+#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
 
-#ifdef HAL_STM32
+#include "HAL.h"
+#include "usb_serial.h"
 
 #include "../../inc/MarlinConfig.h"
 #include "../shared/Delay.h"
 
-#include "usb_serial.h"
-
 #ifdef USBCON
-  DefaultSerial1 MSerialUSB(false, SerialUSB);
+  DefaultSerial1 MSerial0(false, SerialUSB);
 #endif
 
 #if ENABLED(SRAM_EEPROM_EMULATION)
@@ -43,34 +43,34 @@
 #endif
 
 #if HAS_SD_HOST_DRIVE
-  #include "sd/msc_sd.h"
-  #include <usbd_cdc_if.h>
+  #include "msc_sd.h"
+  #include "usbd_cdc_if.h"
 #endif
 
 // ------------------------
 // Public Variables
 // ------------------------
 
-uint16_t MarlinHAL::adc_result;
+uint16_t HAL_adc_result;
 
 // ------------------------
 // Public functions
 // ------------------------
 
-#if ENABLED(POSTMORTEM_DEBUGGING)
-  extern void install_min_serial();
-#endif
+TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
 
 // HAL initialization task
-void MarlinHAL::init() {
+void HAL_init() {
+  FastIO_init();
+
   // Ensure F_CPU is a constant expression.
   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
   // So better safe than sorry here.
-  constexpr unsigned int cpuFreq = F_CPU;
+  constexpr int cpuFreq = F_CPU;
   UNUSED(cpuFreq);
 
-  #if HAS_MEDIA && DISABLED(ONBOARD_SDIO) && PIN_EXISTS(SD_SS)
-    OUT_WRITE(SD_SS_PIN, HIGH); // Try to set SDSS inactive before any other SPI users start up
+  #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
+    OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
   #endif
 
   #if PIN_EXISTS(LED)
@@ -87,23 +87,19 @@ void MarlinHAL::init() {
 
   SetTimerInterruptPriorities();
 
-  #if ENABLED(EMERGENCY_PARSER) && ANY(USBD_USE_CDC, USBD_USE_CDC_MSC)
+  #if ENABLED(EMERGENCY_PARSER) && USBD_USE_CDC
     USB_Hook_init();
   #endif
 
-  TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the min serial handler
+  TERN_(POSTMORTEM_DEBUGGING, install_min_serial()); // Install the min serial handler
 
-  TERN_(HAS_SD_HOST_DRIVE, MSC_SD_init());              // Enable USB SD card access
-
-  #if PIN_EXISTS(USB_CONNECT)
-    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING); // USB clear connection
-    delay_ms(1000);                                     // Give OS time to notice
-    WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
+  #if HAS_SD_HOST_DRIVE
+    MSC_SD_init();                         // Enable USB SD card access
   #endif
 }
 
 // HAL idle task
-void MarlinHAL::idletask() {
+void HAL_idletask() {
   #if HAS_SHARED_MEDIA
     // Stm32duino currently doesn't have a "loop/idle" method
     CDC_resume_receive();
@@ -111,10 +107,10 @@ void MarlinHAL::idletask() {
   #endif
 }
 
-void MarlinHAL::reboot() { NVIC_SystemReset(); }
+void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
 
-uint8_t MarlinHAL::get_reset_source() {
-  return (
+uint8_t HAL_get_reset_source() {
+  return
     #ifdef RCC_FLAG_IWDGRST // Some sources may not exist...
       RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)  ? RST_WATCHDOG :
     #endif
@@ -134,40 +130,27 @@ uint8_t MarlinHAL::get_reset_source() {
       RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)   ? RST_POWER_ON :
     #endif
     0
-  );
+  ;
 }
 
-void MarlinHAL::clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+void HAL_reboot() { NVIC_SystemReset(); }
 
-// ------------------------
-// Watchdog Timer
-// ------------------------
-
-#if ENABLED(USE_WATCHDOG)
-
-  #define WDT_TIMEOUT_US TERN(WATCHDOG_DURATION_8S, 8000000, 4000000) // 4 or 8 second timeout
-
-  #include <IWatchdog.h>
-
-  void MarlinHAL::watchdog_init() {
-    IF_DISABLED(DISABLE_WATCHDOG_INIT, IWatchdog.begin(WDT_TIMEOUT_US));
-  }
-
-  void MarlinHAL::watchdog_refresh() {
-    IWatchdog.reload();
-    #if DISABLED(PINS_DEBUGGING) && PIN_EXISTS(LED)
-      TOGGLE(LED_PIN);  // heartbeat indicator
-    #endif
-  }
-
-#endif
+void _delay_ms(const int delay_ms) { delay(delay_ms); }
 
 extern "C" {
   extern unsigned int _ebss; // end of bss section
 }
 
+// ------------------------
+// ADC
+// ------------------------
+
+// TODO: Make sure this doesn't cause any delay
+void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
+uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+
 // Reset the system to initiate a firmware flash
-WEAK void flashFirmware(const int16_t) { hal.reboot(); }
+void flashFirmware(const int16_t) { HAL_reboot(); }
 
 // Maple Compatibility
 volatile uint32_t systick_uptime_millis = 0;
@@ -178,4 +161,4 @@ void HAL_SYSTICK_Callback() {
   if (systick_user_callback) systick_user_callback();
 }
 
-#endif // HAL_STM32
+#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC

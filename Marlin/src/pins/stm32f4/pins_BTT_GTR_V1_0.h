@@ -23,21 +23,22 @@
 
 #include "env_validate.h"
 
-#if E_STEPPERS > MAX_E_STEPPERS
+#if HOTENDS > 8 || E_STEPPERS > 8
+  #error "BIGTREE GTR V1.0 supports up to 8 hotends / E-steppers."
+#elif HOTENDS > MAX_E_STEPPERS || E_STEPPERS > MAX_E_STEPPERS
   #error "Marlin extruder/hotends limit! Increase MAX_E_STEPPERS to continue."
-#elif HOTENDS > 8 || E_STEPPERS > 8
-  #error "BIGTREE GTR V1.0 supports up to 8 hotends / E steppers."
 #endif
 
 #define BOARD_INFO_NAME "BTT GTR V1.0"
 
-#define USES_DIAG_PINS                            // DIAG jumpers rendered useless due to a board design error
-#define HAS_OTG_USB_HOST_SUPPORT                  // USB Flash Drive support
-#define M5_EXTENDER                               // The M5 extender is attached
-
 // Onboard I2C EEPROM
 #define I2C_EEPROM
-#define MARLIN_EEPROM_SIZE               0x2000U  // 8K (24C64)
+#define MARLIN_EEPROM_SIZE                0x2000  // 8KB (24C64 ... 64Kb = 8KB)
+
+// USB Flash Drive support
+#define HAS_OTG_USB_HOST_SUPPORT
+
+#define M5_EXTENDER                               // The M5 extender is attached
 
 //
 // Servos
@@ -68,57 +69,53 @@
 //
 #ifdef X_STALL_SENSITIVITY
   #define X_STOP_PIN                  X_DIAG_PIN
-  #define X_OTHR_PIN                        PG14  // X+
+  #if X_HOME_DIR < 0
+    #define X_MAX_PIN                E0_DIAG_PIN  // X+
+  #else
+    #define X_MIN_PIN                E0_DIAG_PIN  // X+
+  #endif
 #else
-  #define X_MIN_PIN                         PF2   // X-
-  #define X_MAX_PIN                         PG14  // X+
+  #define X_MIN_PIN                   X_DIAG_PIN  // X-
+  #define X_MAX_PIN                  E0_DIAG_PIN  // X+
 #endif
+
 #ifdef Y_STALL_SENSITIVITY
   #define Y_STOP_PIN                  Y_DIAG_PIN
-  #define Y_OTHR_PIN                        PG9   // Y+
+  #if Y_HOME_DIR < 0
+    #define Y_MAX_PIN                E1_DIAG_PIN  // Y+
+  #else
+    #define Y_MIN_PIN                E1_DIAG_PIN  // Y+
+  #endif
 #else
-  #define Y_MIN_PIN                         PC13  // Y-
-  #define Y_MAX_PIN                         PG9   // Y+
+  #define Y_MIN_PIN                   Y_DIAG_PIN  // Y-
+  #define Y_MAX_PIN                  E1_DIAG_PIN  // Y+
 #endif
+
 #ifdef Z_STALL_SENSITIVITY
   #define Z_STOP_PIN                  Z_DIAG_PIN
-  #define Z_OTHR_PIN                        PD3   // Z+
+  #if Z_HOME_DIR < 0
+    #define Z_MAX_PIN                E2_DIAG_PIN  // Z+
+  #else
+    #define Z_MIN_PIN                E2_DIAG_PIN  // Z+
+  #endif
 #else
-  #define Z_MIN_PIN                         PE0   // Z-
-  #define Z_MAX_PIN                         PD3   // Z+
+  #define Z_MIN_PIN                   Z_DIAG_PIN  // Z-
+  #define Z_MAX_PIN                  E2_DIAG_PIN  // Z+
 #endif
 
 //
 // Pins on the extender
 //
 #if ENABLED(M5_EXTENDER)
-  #define USES_DIAG_JUMPERS                       // DIAG jumpers work on M5 extender
-  #ifndef X2_STOP_PIN
-    #define X2_STOP_PIN                     PI4   // M5 M1_STOP
-  #endif
-  #ifndef Y2_STOP_PIN
-    #define Y2_STOP_PIN                     PF12  // M5 M5_STOP
-  #endif
-  #ifndef Z2_STOP_PIN
-    #define Z2_STOP_PIN                     PF4   // M5 M2_STOP
-  #endif
-  #ifndef Z3_STOP_PIN
-    #define Z3_STOP_PIN                     PI7   // M5 M4_STOP
-  #endif
-  #ifndef Z4_STOP_PIN
-    #define Z4_STOP_PIN                     PF6   // M5 M3_STOP
-  #endif
+  #define X2_STOP_PIN                       PI4   // M5 M1_STOP
+  #define Y2_STOP_PIN                       PF12  // M5 M5_STOP
+  #define Z2_STOP_PIN                       PF4   // M5 M2_STOP
+  #define Z3_STOP_PIN                       PI7   // M5 M4_STOP
+  #define Z4_STOP_PIN                       PF6   // M5 M3_STOP
 #endif
 
 #ifndef Z_MIN_PROBE_PIN
   #define Z_MIN_PROBE_PIN                   PH11  // Z Probe must be PH11
-#endif
-
-//
-// Probe enable
-//
-#if ENABLED(PROBE_ENABLE_DISABLE) && !defined(PROBE_ENABLE_PIN)
-  #define PROBE_ENABLE_PIN            SERVO0_PIN
 #endif
 
 //
@@ -206,16 +203,18 @@
 #endif
 
 //
-// SPI pins for TMC2130 stepper drivers
+// Software SPI pins for TMC2130 stepper drivers
 //
-#ifndef TMC_SPI_MOSI
-  #define TMC_SPI_MOSI                      PG15
-#endif
-#ifndef TMC_SPI_MISO
-  #define TMC_SPI_MISO                      PB6
-#endif
-#ifndef TMC_SPI_SCK
-  #define TMC_SPI_SCK                       PB3
+#if ENABLED(TMC_USE_SW_SPI)
+  #ifndef TMC_SW_MOSI
+    #define TMC_SW_MOSI                     PG15
+  #endif
+  #ifndef TMC_SW_MISO
+    #define TMC_SW_MISO                     PB6
+  #endif
+  #ifndef TMC_SW_SCK
+    #define TMC_SW_SCK                      PB3
+  #endif
 #endif
 
 #if HAS_TMC_UART
@@ -240,26 +239,47 @@
   //#define E6_HARDWARE_SERIAL Serial1  // M5 MOTOR 4
   //#define E7_HARDWARE_SERIAL Serial1  // M5 MOTOR 5
 
+  //
+  // Software serial
+  //
   #define X_SERIAL_TX_PIN                   PC14
+  #define X_SERIAL_RX_PIN                   PC14
+
   #define Y_SERIAL_TX_PIN                   PE1
+  #define Y_SERIAL_RX_PIN                   PE1
+
   #define Z_SERIAL_TX_PIN                   PB5
+  #define Z_SERIAL_RX_PIN                   PB5
+
   #define E0_SERIAL_TX_PIN                  PG10
+  #define E0_SERIAL_RX_PIN                  PG10
+
   #define E1_SERIAL_TX_PIN                  PD4
+  #define E1_SERIAL_RX_PIN                  PD4
+
   #define E2_SERIAL_TX_PIN                  PC12
+  #define E2_SERIAL_RX_PIN                  PC12
+
   #if ENABLED(M5_EXTENDER)
     #define E3_SERIAL_TX_PIN                PG4
+    #define E3_SERIAL_RX_PIN                PG4
+
     #define E4_SERIAL_TX_PIN                PE15
+    #define E4_SERIAL_RX_PIN                PE15
+
     #define E5_SERIAL_TX_PIN                PE7
+    #define E5_SERIAL_RX_PIN                PE7
+
     #define E6_SERIAL_TX_PIN                PF15
+    #define E6_SERIAL_RX_PIN                PF15
+
     #define E7_SERIAL_TX_PIN                PH14
+    #define E7_SERIAL_RX_PIN                PH14
   #endif
 
   // Reduce baud rate to improve software serial reliability
-  #ifndef TMC_BAUD_RATE
-    #define TMC_BAUD_RATE                  19200
-  #endif
-
-#endif // HAS_TMC_UART
+  #define TMC_BAUD_RATE                    19200
+#endif
 
 //
 // Temperature Sensors
@@ -278,19 +298,19 @@
 
 #define TEMP_BED_PIN                        PC0   // T0 <-> Bed
 
-// SPI for MAX Thermocouple
+// SPI for Max6675 or Max31855 Thermocouple
 // Uses a separate SPI bus
-// If you have a two-way thermocouple, you can customize two TEMP_x_CS_PIN pins (x:0~1)
+// If you have a two-way thermocouple, you can customize two THERMO_CSx_PIN pins (x:1~2)
 
-#define TEMP_0_CS_PIN                       PH9   // GTR K-TEMP
-#define TEMP_0_SCK_PIN                      PI1   // SCK
-#define TEMP_0_MISO_PIN                     PI2   // MISO
-//#define TEMP_0_MOSI_PIN                   ...   // For MAX31865
+#define THERMO_SCK_PIN                      PI1   // SCK
+#define THERMO_DO_PIN                       PI2   // MISO
+#define THERMO_CS1_PIN                      PH9   // GTR K-TEMP
+#define THERMO_CS2_PIN                      PH2   // M5 K-TEMP
 
-#define TEMP_1_CS_PIN                       PH2   // M5 K-TEMP
-#define TEMP_1_SCK_PIN            TEMP_0_SCK_PIN
-#define TEMP_1_MISO_PIN          TEMP_0_MISO_PIN
-//#define TEMP_1_MOSI_PIN        TEMP_0_MOSI_PIN
+#define MAX6675_SS_PIN            THERMO_CS1_PIN
+#define MAX6675_SS2_PIN           THERMO_CS2_PIN
+#define MAX6675_SCK_PIN           THERMO_SCK_PIN
+#define MAX6675_DO_PIN             THERMO_DO_PIN
 
 //
 // Heaters / Fans
@@ -309,7 +329,7 @@
 
 #define HEATER_BED_PIN                      PA2   // Hotbed
 
-#define FAN0_PIN                            PE5   // Fan0
+#define FAN_PIN                             PE5   // Fan0
 #define FAN1_PIN                            PE6   // Fan1
 #define FAN2_PIN                            PC8   // Fan2
 
@@ -322,7 +342,7 @@
 #endif
 
 #ifndef SDCARD_CONNECTION
-  #define SDCARD_CONNECTION              ONBOARD
+  #define SDCARD_CONNECTION ONBOARD
 #endif
 
 //
@@ -332,12 +352,15 @@
 //
 #if SD_CONNECTION_IS(LCD)
 
-  #define SD_DETECT_PIN              EXP2_07_PIN
-  #define SD_SS_PIN                  EXP2_04_PIN
+  #define SD_DETECT_PIN                     PB10
+  #define SDSS                              PB12
 
 #elif SD_CONNECTION_IS(ONBOARD)
 
-  #define SD_SS_PIN                         PA4
+  // Instruct the STM32 HAL to override the default SPI pins from the variant.h file
+  #define CUSTOM_SPI_PINS
+  #define SDSS                              PA4
+  #define SD_SS_PIN                         SDSS
   #define SD_SCK_PIN                        PA5
   #define SD_MISO_PIN                       PA6
   #define SD_MOSI_PIN                       PA7
@@ -348,114 +371,85 @@
 #endif
 
 /**
- *                ------                                     ------
- * (BEEPER) PC11 | 1  2 | PA15 (BTN_ENC)        (MISO) PB14 | 1  2 | PB13 (SCK)
- * (LCD_EN) PC10 | 3  4 | PA8  (LCD_RS)      (BTN_EN1) PD10 | 3  4 | PB12 (SD_SS)
- * (LCD_D4) PG8    5  6 | PG7  (LCD_D5)      (BTN_EN2) PH10   5  6 | PB15 (MOSI)
- * (LCD_D6) PG6  | 7  8 | PG5  (LCD_D7)    (SD_DETECT) PB10 | 7  8 | RESET
- *           GND | 9 10 | 5V                            GND | 9 10 | --
- *                ------                                     ------
- *                 EXP1                                       EXP2
+ *               -----                                             -----
+ *           NC | · · | GND                                    5V | · · | GND
+ *        RESET | · · | PB10(SD_DETECT)             (LCD_D7)  PG5 | · · | PG6  (LCD_D6)
+ *   (MOSI)PB15 | · · | PH10(BTN_EN2)               (LCD_D5)  PG7 | · · | PG8  (LCD_D4)
+ *  (SD_SS)PB12 | · · | PD10(BTN_EN1)               (LCD_RS)  PA8 | · · | PC10 (LCD_EN)
+ *    (SCK)PB13 | · · | PB14(MISO)                 (BTN_ENC) PA15 | · · | PC11  (BEEPER)
+ *               -----                                             -----
+ *               EXP2                                              EXP1
  */
-#define EXP1_01_PIN                         PC11
-#define EXP1_02_PIN                         PA15
-#define EXP1_03_PIN                         PC10
-#define EXP1_04_PIN                         PA8
-#define EXP1_05_PIN                         PG8
-#define EXP1_06_PIN                         PG7
-#define EXP1_07_PIN                         PG6
-#define EXP1_08_PIN                         PG5
-
-#define EXP2_01_PIN                         PB14
-#define EXP2_02_PIN                         PB13
-#define EXP2_03_PIN                         PD10
-#define EXP2_04_PIN                         PB12
-#define EXP2_05_PIN                         PH10
-#define EXP2_06_PIN                         PB15
-#define EXP2_07_PIN                         PB10
 
 //
-// LCD / Controller
+// LCDs and Controllers
 //
-
-#if ANY(TFT_COLOR_UI, TFT_LVGL_UI, TFT_CLASSIC_UI)
-
-  #define TFT_CS_PIN                 EXP2_04_PIN
-  #define TFT_A0_PIN                 EXP2_07_PIN
-  #define TFT_SCK_PIN                EXP2_02_PIN
-  #define TFT_MISO_PIN               EXP2_01_PIN
-  #define TFT_MOSI_PIN               EXP2_06_PIN
-
-  #define TOUCH_INT_PIN              EXP1_07_PIN
-  #define TOUCH_MISO_PIN             EXP1_06_PIN
-  #define TOUCH_MOSI_PIN             EXP1_03_PIN
-  #define TOUCH_SCK_PIN              EXP1_05_PIN
-  #define TOUCH_CS_PIN               EXP1_04_PIN
-  #define BTN_ENC                    EXP1_02_PIN
-  #define BTN_EN1                    EXP2_03_PIN
-  #define BTN_EN2                    EXP2_05_PIN
-
-#elif HAS_WIRED_LCD
-  #define BEEPER_PIN                 EXP1_01_PIN
-  #define BTN_ENC                    EXP1_02_PIN
+#if HAS_WIRED_LCD
+  #define BEEPER_PIN                        PC11
+  #define BTN_ENC                           PA15
 
   #if ENABLED(CR10_STOCKDISPLAY)
-    #define LCD_PINS_RS              EXP1_07_PIN
+    #define LCD_PINS_RS                     PG6
 
-    #define BTN_EN1                  EXP1_03_PIN
-    #define BTN_EN2                  EXP1_05_PIN
+    #define BTN_EN1                         PC10
+    #define BTN_EN2                         PG8
 
-    #define LCD_PINS_EN              EXP1_08_PIN
-    #define LCD_PINS_D4              EXP1_06_PIN
+    #define LCD_PINS_ENABLE                 PG5
+    #define LCD_PINS_D4                     PG7
+
+    // CR10_STOCKDISPLAY default timing is too fast
+    #undef BOARD_ST7920_DELAY_1
+    #undef BOARD_ST7920_DELAY_2
+    #undef BOARD_ST7920_DELAY_3
 
   #elif ENABLED(MKS_MINI_12864)
-    #define DOGLCD_A0                EXP1_07_PIN
-    #define DOGLCD_CS                EXP1_06_PIN
-    #define BTN_EN1                  EXP2_03_PIN
-    #define BTN_EN2                  EXP2_05_PIN
+    #define DOGLCD_A0                       PG6
+    #define DOGLCD_CS                       PG7
+    #define BTN_EN1                         PD10
+    #define BTN_EN2                         PH10
 
     #if SD_CONNECTION_IS(ONBOARD)
       #define SOFTWARE_SPI
     #endif
   #else
 
-    #define LCD_PINS_RS              EXP1_04_PIN
+    #define LCD_PINS_RS                     PA8
 
-    #define BTN_EN1                  EXP2_03_PIN
-    #define BTN_EN2                  EXP2_05_PIN
+    #define BTN_EN1                         PD10
+    #define BTN_EN2                         PH10
 
-    #define LCD_PINS_EN              EXP1_03_PIN
-    #define LCD_PINS_D4              EXP1_05_PIN
+    #define LCD_PINS_ENABLE                 PC10
+    #define LCD_PINS_D4                     PG8
 
     #if ENABLED(FYSETC_MINI_12864)
-      #define DOGLCD_CS              EXP1_03_PIN
-      #define DOGLCD_A0              EXP1_04_PIN
+      #define DOGLCD_CS                     PC10
+      #define DOGLCD_A0                     PA8
 
       #if SD_CONNECTION_IS(ONBOARD)
         #define SOFTWARE_SPI
       #endif
 
       //#define LCD_BACKLIGHT_PIN           -1
-      #define LCD_RESET_PIN          EXP1_05_PIN  // Must be high or open for LCD to operate normally.
-      #if ANY(FYSETC_MINI_12864_1_2, FYSETC_MINI_12864_2_0)
+      #define LCD_RESET_PIN                 PG8   // Must be high or open for LCD to operate normally.
+      #if EITHER(FYSETC_MINI_12864_1_2, FYSETC_MINI_12864_2_0)
         #ifndef RGB_LED_R_PIN
-          #define RGB_LED_R_PIN      EXP1_06_PIN
+          #define RGB_LED_R_PIN             PG7
         #endif
         #ifndef RGB_LED_G_PIN
-          #define RGB_LED_G_PIN      EXP1_07_PIN
+          #define RGB_LED_G_PIN             PG6
         #endif
         #ifndef RGB_LED_B_PIN
-          #define RGB_LED_B_PIN      EXP1_08_PIN
+          #define RGB_LED_B_PIN             PG5
         #endif
       #elif ENABLED(FYSETC_MINI_12864_2_1)
-        #define NEOPIXEL_PIN         EXP1_06_PIN
+        #define NEOPIXEL_PIN                PG7
       #endif
-    #endif // FYSETC_MINI_12864
+    #endif // !FYSETC_MINI_12864
 
     #if IS_ULTIPANEL
-      #define LCD_PINS_D5            EXP1_06_PIN
-      #define LCD_PINS_D6            EXP1_07_PIN
-      #define LCD_PINS_D7            EXP1_08_PIN
+      #define LCD_PINS_D5                   PG7
+      #define LCD_PINS_D6                   PG6
+      #define LCD_PINS_D7                   PG5
 
       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
@@ -466,10 +460,16 @@
   #endif
 
   // Alter timing for graphical display
-  #if IS_U8GLIB_ST7920
-    #define BOARD_ST7920_DELAY_1             125
-    #define BOARD_ST7920_DELAY_2              90
-    #define BOARD_ST7920_DELAY_3             600
+  #if HAS_MARLINUI_U8GLIB
+    #ifndef BOARD_ST7920_DELAY_1
+      #define BOARD_ST7920_DELAY_1 DELAY_NS(96)
+    #endif
+    #ifndef BOARD_ST7920_DELAY_2
+      #define BOARD_ST7920_DELAY_2 DELAY_NS(48)
+    #endif
+    #ifndef BOARD_ST7920_DELAY_3
+      #define BOARD_ST7920_DELAY_3 DELAY_NS(600)
+    #endif
   #endif
 
 #endif // HAS_WIRED_LCD

@@ -28,43 +28,34 @@
 
 #include "../../module/endstops.h"
 #include "../../module/motion.h"
-#include "../../module/planner.h"
+#include "../../module/stepper.h"
 #include "../../module/probe.h"
-
-probe_target_t G38_move{0};
 
 inline void G38_single_probe(const uint8_t move_value) {
   endstops.enable(true);
-  G38_move.type = move_value;
+  G38_move = move_value;
   prepare_line_to_destination();
   planner.synchronize();
-  G38_move.type = 0;
+  G38_move = 0;
   endstops.hit_on_purpose();
-  set_current_from_steppers_for_axis(ALL_AXES_ENUM);
+  set_current_from_steppers_for_axis(ALL_AXES);
   sync_plan_position();
 }
 
-/**
- * Handle G38.N where N is the sub-code for the type of probe:
- *  2 - Probe toward workpiece, stop on contact, signal error if failure
- *  3 - Probe toward workpiece, stop on contact
- *  4 - Probe away from workpiece, stop on contact break, signal error if failure
- *  5 - Probe away from workpiece, stop on contact break
- */
-FORCE_INLINE bool G38_run_probe() {
+inline bool G38_run_probe() {
 
   bool G38_pass_fail = false;
 
   #if MULTIPLE_PROBING > 1
     // Get direction of move and retract
     xyz_float_t retract_mm;
-    LOOP_NUM_AXES(i) {
+    LOOP_XYZ(i) {
       const float dist = destination[i] - current_position[i];
       retract_mm[i] = ABS(dist) < G38_MINIMUM_MOVE ? 0 : home_bump_mm((AxisEnum)i) * (dist > 0 ? -1 : 1);
     }
   #endif
 
-  planner.synchronize(); // Wait until the machine is idle
+  planner.synchronize();  // wait until the machine is idle
 
   // Move flag value
   #if ENABLED(G38_PROBE_AWAY)
@@ -73,12 +64,12 @@ FORCE_INLINE bool G38_run_probe() {
     constexpr uint8_t move_value = 1;
   #endif
 
-  G38_move.triggered = false;
+  G38_did_trigger = false;
 
   // Move until destination reached or target hit
   G38_single_probe(move_value);
 
-  if (G38_move.triggered) {
+  if (G38_did_trigger) {
 
     G38_pass_fail = true;
 
@@ -114,16 +105,21 @@ FORCE_INLINE bool G38_run_probe() {
  *  G38.5 - Probe away from workpiece, stop on contact break
  */
 void GcodeSuite::G38(const int8_t subcode) {
-
   // Get X Y Z E F
   get_destination_from_command();
 
   remember_feedrate_scaling_off();
 
-  const bool error_on_fail = TERN(G38_PROBE_AWAY, !TEST(subcode, 0), subcode == 2);
+  const bool error_on_fail =
+    #if ENABLED(G38_PROBE_AWAY)
+      !TEST(subcode, 0)
+    #else
+      (subcode == 2)
+    #endif
+  ;
 
   // If any axis has enough movement, do the move
-  LOOP_NUM_AXES(i)
+  LOOP_XYZ(i)
     if (ABS(destination[i] - current_position[i]) >= G38_MINIMUM_MOVE) {
       if (!parser.seenval('F')) feedrate_mm_s = homing_feedrate((AxisEnum)i);
       // If G38.2 fails throw an error

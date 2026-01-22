@@ -23,13 +23,11 @@
 
 #include "../inc/MarlinConfig.h"
 
-#if HAS_BEEPER
+#if USE_BEEPER
 
   #include "circularqueue.h"
 
-  #ifndef TONE_QUEUE_LENGTH
-    #define TONE_QUEUE_LENGTH 4
-  #endif
+  #define TONE_QUEUE_LENGTH 4
 
   /**
    * @brief Tone structure
@@ -58,28 +56,16 @@
       static CircularQueue<tone_t, TONE_QUEUE_LENGTH> buffer;
 
       /**
-       * @brief Inverts the state of a digital PIN
+       * @brief Inverts the sate of a digital PIN
        * @details This will invert the current state of an digital IO pin.
        */
       FORCE_INLINE static void invert() { TOGGLE(BEEPER_PIN); }
 
       /**
-       * @brief Resets the state of the class
-       * @details Brings the class state to a known one.
+       * @brief Turn off a digital PIN
+       * @details Alias of digitalWrite(PIN, LOW) using FastIO
        */
-      static void reset() {
-        off();
-        state.endtime = 0;
-      }
-
-    public:
-      /**
-       * @brief Init Buzzer
-       */
-      static void init() {
-        SET_OUTPUT(BEEPER_PIN);
-        reset();
-      }
+      FORCE_INLINE static void off() { WRITE(BEEPER_PIN, LOW); }
 
       /**
        * @brief Turn on a digital PIN
@@ -88,12 +74,22 @@
       FORCE_INLINE static void on() { WRITE(BEEPER_PIN, HIGH); }
 
       /**
-       * @brief Turn off a digital PIN
-       * @details Alias of digitalWrite(PIN, LOW) using FastIO
+       * @brief Resets the state of the class
+       * @details Brings the class state to a known one.
        */
-      FORCE_INLINE static void off() { WRITE(BEEPER_PIN, LOW); }
+      static inline void reset() {
+        off();
+        state.endtime = 0;
+      }
 
-      static void click(const uint16_t duration) { on(); delay(duration); off(); }
+    public:
+      /**
+       * @brief Init Buzzer
+       */
+      static inline void init() {
+        SET_OUTPUT(BEEPER_PIN);
+        reset();
+      }
 
       /**
        * @brief Add a tone to the queue
@@ -117,20 +113,17 @@
   extern Buzzer buzzer;
 
   // Buzz directly via the BEEPER pin tone queue
-  #define BUZZ(V...) buzzer.tone(V)
+  #define BUZZ(d,f) buzzer.tone(d, f)
 
-#elif USE_MARLINUI_BUZZER
+#elif HAS_BUZZER
 
-  // Use MarlinUI for a buzzer on the LCD
-  #define BUZZ(V...) ui.buzz(V)
+  // Buzz indirectly via the MarlinUI instance
+  #include "../lcd/marlinui.h"
+  #define BUZZ(d,f) ui.buzz(d,f)
 
 #else
 
   // No buzz capability
-  #define BUZZ(...) NOOP
+  #define BUZZ(d,f) NOOP
 
 #endif
-
-#define ERR_BUZZ() BUZZ(400, 40)
-#define OKAY_BUZZ() do{ BUZZ(100, 659); BUZZ(10); BUZZ(100, 698); }while(0)
-#define DONE_BUZZ(ok) do{ if (ok) OKAY_BUZZ(); else ERR_BUZZ(); }while(0)

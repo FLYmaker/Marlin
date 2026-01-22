@@ -33,9 +33,8 @@
 void UnwPrintf(const char *format, ...) {
   va_list args;
 
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
+  va_start( args, format );
+  vprintf(format, args );
 }
 #endif
 
@@ -49,6 +48,7 @@ void UnwInvalidateRegisterFile(RegData *regFile) {
     t++;
   } while (t < 13);
 }
+
 
 /**
  * Initialize the data used for unwinding.
@@ -127,6 +127,7 @@ bool UnwReportRetAddr(UnwState * const state, uint32_t addr) {
    */
   return state->cb->report((void *)state->reportData, &entry);
 }
+
 
 /**
  * Write some register to memory.

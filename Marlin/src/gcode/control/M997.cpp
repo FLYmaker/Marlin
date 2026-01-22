@@ -24,16 +24,10 @@
 
 #if ENABLED(PLATFORM_M997_SUPPORT)
 
-#if ENABLED(EXTENSIBLE_UI)
-  #include "../../lcd/extui/ui_api.h"
-#endif
-
 /**
  * M997: Perform in-application firmware update
  */
 void GcodeSuite::M997() {
-
-  TERN_(EXTENSIBLE_UI, ExtUI::onFirmwareFlash());
 
   flashFirmware(parser.intval('S'));
 

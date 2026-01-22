@@ -1,9 +1,7 @@
 /**
  * Marlin 3D Printer Firmware
  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
- *
- * Based on Sprinter and grbl.
- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,7 +26,7 @@
 // ------------------------
 
 typedef uint16_t hal_timer_t;
-#define HAL_TIMER_TYPE_MAX hal_timer_t(UINT16_MAX)
+#define HAL_TIMER_TYPE_MAX 0xFFFF
 
 // ------------------------
 // Defines
@@ -36,36 +34,37 @@ typedef uint16_t hal_timer_t;
 
 #define HAL_TIMER_RATE          ((F_CPU) / 8)    // i.e., 2MHz or 2.5MHz
 
-#ifndef MF_TIMER_STEP
-  #define MF_TIMER_STEP         1
+#ifndef STEP_TIMER_NUM
+  #define STEP_TIMER_NUM        1
 #endif
-#ifndef MF_TIMER_PULSE
-  #define MF_TIMER_PULSE        MF_TIMER_STEP
+#ifndef PULSE_TIMER_NUM
+  #define PULSE_TIMER_NUM       STEP_TIMER_NUM
 #endif
-#ifndef MF_TIMER_TEMP
-  #define MF_TIMER_TEMP         0
+#ifndef TEMP_TIMER_NUM
+  #define TEMP_TIMER_NUM        0
 #endif
 
-#define TEMP_TIMER_FREQUENCY        (((F_CPU) + 0x2000) / 0x4000)
+#define TEMP_TIMER_FREQUENCY    ((F_CPU) / 64.0 / 256.0)
 
-#define STEPPER_TIMER_RATE          HAL_TIMER_RATE
-#define STEPPER_TIMER_PRESCALE      8
-#define STEPPER_TIMER_TICKS_PER_US  ((STEPPER_TIMER_RATE) / 1000000UL)              // (MHz) Stepper Timer ticks per µs
+#define STEPPER_TIMER_RATE      HAL_TIMER_RATE
+#define STEPPER_TIMER_PRESCALE  8
+#define STEPPER_TIMER_TICKS_PER_US ((STEPPER_TIMER_RATE) / 1000000) // Cannot be of type double
 
-#define PULSE_TIMER_RATE            STEPPER_TIMER_RATE                              // (Hz) Frequency of Pulse Timer
-#define PULSE_TIMER_PRESCALE        STEPPER_TIMER_PRESCALE
+#define PULSE_TIMER_RATE       STEPPER_TIMER_RATE   // frequency of pulse timer
+#define PULSE_TIMER_PRESCALE   STEPPER_TIMER_PRESCALE
+#define PULSE_TIMER_TICKS_PER_US STEPPER_TIMER_TICKS_PER_US
 
 #define ENABLE_STEPPER_DRIVER_INTERRUPT()  SBI(TIMSK1, OCIE1A)
 #define DISABLE_STEPPER_DRIVER_INTERRUPT() CBI(TIMSK1, OCIE1A)
 #define STEPPER_ISR_ENABLED()             TEST(TIMSK1, OCIE1A)
 
-#define ENABLE_TEMPERATURE_INTERRUPT()     SBI(TIMSK0, OCIE0A)
-#define DISABLE_TEMPERATURE_INTERRUPT()    CBI(TIMSK0, OCIE0A)
-#define TEMPERATURE_ISR_ENABLED()         TEST(TIMSK0, OCIE0A)
+#define ENABLE_TEMPERATURE_INTERRUPT()     SBI(TIMSK0, OCIE0B)
+#define DISABLE_TEMPERATURE_INTERRUPT()    CBI(TIMSK0, OCIE0B)
+#define TEMPERATURE_ISR_ENABLED()         TEST(TIMSK0, OCIE0B)
 
 FORCE_INLINE void HAL_timer_start(const uint8_t timer_num, const uint32_t) {
   switch (timer_num) {
-    case MF_TIMER_STEP:
+    case STEP_TIMER_NUM:
       // waveform generation = 0100 = CTC
       SET_WGM(1, CTC_OCRnA);
 
@@ -85,10 +84,10 @@ FORCE_INLINE void HAL_timer_start(const uint8_t timer_num, const uint32_t) {
       TCNT1 = 0;
       break;
 
-    case MF_TIMER_TEMP:
+    case TEMP_TIMER_NUM:
       // Use timer0 for temperature measurement
       // Interleave temperature interrupt with millies interrupt
-      OCR0A = 128;
+      OCR0B = 128;
       break;
   }
 }
@@ -110,12 +109,12 @@ FORCE_INLINE void HAL_timer_start(const uint8_t timer_num, const uint32_t) {
  * (otherwise, characters will be lost due to UART overflow).
  * Then: Stepper, Endstops, Temperature, and -finally- all others.
  */
-inline void HAL_timer_isr_prologue(const uint8_t) {}
-inline void HAL_timer_isr_epilogue(const uint8_t) {}
-
-#ifndef HAL_STEP_TIMER_ISR
+#define HAL_timer_isr_prologue(TIMER_NUM)
+#define HAL_timer_isr_epilogue(TIMER_NUM)
 
 /* 18 cycles maximum latency */
+#ifndef HAL_STEP_TIMER_ISR
+
 #define HAL_STEP_TIMER_ISR() \
 extern "C" void TIMER1_COMPA_vect() __attribute__ ((signal, naked, used, externally_visible)); \
 extern "C" void TIMER1_COMPA_vect_bottom() asm ("TIMER1_COMPA_vect_bottom") __attribute__ ((used, externally_visible, noinline)); \
@@ -181,7 +180,7 @@ void TIMER1_COMPA_vect() { \
     :                                   \
     : [timsk0] "i" ((uint16_t)&TIMSK0), \
       [timsk1] "i" ((uint16_t)&TIMSK1), \
-      [msk0] "M" ((uint8_t)(1<<OCIE0A)),\
+      [msk0] "M" ((uint8_t)(1<<OCIE0B)),\
       [msk1] "M" ((uint8_t)(1<<OCIE1A)) \
     : \
   ); \
@@ -194,9 +193,9 @@ void TIMER1_COMPA_vect_bottom()
 
 /* 14 cycles maximum latency */
 #define HAL_TEMP_TIMER_ISR() \
-extern "C" void TIMER0_COMPA_vect() __attribute__ ((signal, naked, used, externally_visible)); \
-extern "C" void TIMER0_COMPA_vect_bottom()  asm ("TIMER0_COMPA_vect_bottom") __attribute__ ((used, externally_visible, noinline)); \
-void TIMER0_COMPA_vect() { \
+extern "C" void TIMER0_COMPB_vect() __attribute__ ((signal, naked, used, externally_visible)); \
+extern "C" void TIMER0_COMPB_vect_bottom()  asm ("TIMER0_COMPB_vect_bottom") __attribute__ ((used, externally_visible, noinline)); \
+void TIMER0_COMPB_vect() { \
   __asm__ __volatile__ ( \
     A("push r16")                       /* 2 Save R16 */ \
     A("in r16, __SREG__")               /* 1 Get SREG */ \
@@ -224,7 +223,7 @@ void TIMER0_COMPA_vect() { \
     A("push r30")                       \
     A("push r31")                       \
     A("clr r1")                         /* C runtime expects this register to be 0 */ \
-    A("call TIMER0_COMPA_vect_bottom")  /* Call the bottom handler - No inlining allowed, otherwise registers used are not saved */   \
+    A("call TIMER0_COMPB_vect_bottom")  /* Call the bottom handler - No inlining allowed, otherwise registers used are not saved */   \
     A("pop r31")                        \
     A("pop r30")                        \
     A("pop r27")                        \
@@ -252,10 +251,10 @@ void TIMER0_COMPA_vect() { \
     A("reti")                           /* 4 Return from interrupt */ \
     :                                   \
     : [timsk0] "i"((uint16_t)&TIMSK0),  \
-      [msk0] "M" ((uint8_t)(1<<OCIE0A)) \
+      [msk0] "M" ((uint8_t)(1<<OCIE0B)) \
     : \
   ); \
 } \
-void TIMER0_COMPA_vect_bottom()
+void TIMER0_COMPB_vect_bottom()
 
 #endif // HAL_TEMP_TIMER_ISR

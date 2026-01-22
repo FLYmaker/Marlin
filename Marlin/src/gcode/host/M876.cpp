@@ -19,24 +19,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-
 #include "../../inc/MarlinConfig.h"
 
-#if HAS_GCODE_M876
+#if ENABLED(HOST_PROMPT_SUPPORT) && DISABLED(EMERGENCY_PARSER)
 
-#if ENABLED(EMERGENCY_PARSER)
-  #include "../../feature/e_parser.h"
-#endif
 #include "../../feature/host_actions.h"
 #include "../gcode.h"
+#include "../../MarlinCore.h"
 
 /**
  * M876: Handle Prompt Response
  */
 void GcodeSuite::M876() {
 
-  if (parser.seenval('S')) hostui.handle_response((uint8_t)parser.value_int());
+  if (parser.seenval('S')) host_response_handler((uint8_t)parser.value_int());
 
 }
 
-#endif // HAS_GCODE_M876
+#endif // HOST_PROMPT_SUPPORT && !EMERGENCY_PARSER

@@ -33,12 +33,10 @@ public:
   static void lock_machine();
   static void authentication_check();
 
-  #if HAS_MARLINUI_MENU
+  #if HAS_LCD_MENU
     static void access_menu_password();
     static void authentication_done();
     static void media_gatekeeper();
-    static void media_gatekeeper_sd();
-    static void media_gatekeeper_usb();
 
     private:
     static void authenticate_user(const screenFunc_t, const screenFunc_t);

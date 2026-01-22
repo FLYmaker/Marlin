@@ -28,7 +28,7 @@
 #include "env_validate.h"
 
 #if HOTENDS > 2 || E_STEPPERS > 2
-  #error "MKS Robin Lite3 supports up to 2 hotends / E steppers."
+  #error "MKS Robin Lite3 supports up to 2 hotends / E-steppers. Comment out this line to continue."
 #endif
 
 #ifndef BOARD_INFO_NAME
@@ -53,13 +53,6 @@
 #define Y_STOP_PIN                          PA11
 #define Z_MIN_PIN                           PC6
 #define Z_MAX_PIN                           PB1
-
-//
-// Probe enable
-//
-#if ENABLED(PROBE_ENABLE_DISABLE) && !defined(PROBE_ENABLE_PIN)
-  #define PROBE_ENABLE_PIN            SERVO0_PIN
-#endif
 
 //
 // Steppers
@@ -89,7 +82,7 @@
 //
 #define HEATER_0_PIN                        PC9
 #define HEATER_1_PIN                        PC7
-#define FAN0_PIN                            PA8
+#define FAN_PIN                             PA8
 #define HEATER_BED_PIN                      PC8
 
 //
@@ -108,7 +101,7 @@
 
   #define BEEPER_PIN                        PC1
   #define BTN_ENC                           PC3
-  #define LCD_PINS_EN                       PA4
+  #define LCD_PINS_ENABLE                   PA4
   #define LCD_PINS_RS                       PA5
   #define BTN_EN1                           PB11
   #define BTN_EN2                           PB0
@@ -129,7 +122,7 @@
       #define TFTGLCD_CS                    PB11
     #endif
 
-  #else // !MKS_MINI_12864
+  #else                                           // !MKS_MINI_12864
 
     #define LCD_PINS_D4                     PA6
     #if IS_ULTIPANEL
@@ -145,9 +138,9 @@
 
   #endif // !MKS_MINI_12864
 
-  #define BOARD_ST7920_DELAY_1               125
-  #define BOARD_ST7920_DELAY_2               125
-  #define BOARD_ST7920_DELAY_3               125
+  #define BOARD_ST7920_DELAY_1     DELAY_NS(125)
+  #define BOARD_ST7920_DELAY_2     DELAY_NS(125)
+  #define BOARD_ST7920_DELAY_3     DELAY_NS(125)
 
 #endif // HAS_WIRED_LCD
 
@@ -159,7 +152,7 @@
 //
 // SPI
 //
-#define SPI_DEVICE                             2  // Maple
+#define SPI_DEVICE                             2
 #define SD_SCK_PIN                          PB13
 #define SD_MISO_PIN                         PB14
 #define SD_MOSI_PIN                         PB15
